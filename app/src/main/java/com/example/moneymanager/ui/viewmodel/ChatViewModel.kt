@@ -34,81 +34,62 @@ class ChatViewModel @Inject constructor(
     private val _chatState = MutableStateFlow<ChatUiState>(ChatUiState.Loading)
     val chatState: StateFlow<ChatUiState> = _chatState.asStateFlow()
 
-    // Biến lưu ngữ cảnh tài chính để AI biết tình hình của bạn
     private var financialContextPrompt: String = ""
 
     init {
-        initializeFinancialContext()
+        // Khởi tạo ngữ cảnh lần đầu
+        updateFinancialContext()
     }
 
-    private fun initializeFinancialContext() {
+    private fun updateFinancialContext(onComplete: () -> Unit = {}) {
         viewModelScope.launch {
-            _chatState.value = ChatUiState.Loading
-
             try {
-                // 1. Lấy dữ liệu tổng quan (Timeout 3s)
-                val allTransactions = withTimeoutOrNull(3000) {
+                // 1. Tăng Timeout lên 10s để đảm bảo lấy được dữ liệu từ Firebase
+                val allTransactions = withTimeoutOrNull(10000) {
                     transactionRepository.getAllTransactions().first()
                 } ?: emptyList()
-                val allBudgets = withTimeoutOrNull(3000) {
+                
+                val allBudgets = withTimeoutOrNull(5000) {
                     budgetRepository.getBudgets(Date()).first()
                 } ?: emptyList()
 
-                // 2. Tính toán số liệu cơ bản
+                // 2. Tính toán số liệu
                 val today = LocalDate.now()
-                val thisMonthTransactions = allTransactions.filter {
-                    val txDate = it.date.toDate().toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDate()
-                    txDate.month == today.month && txDate.year == today.year
-                }
-
-                val totalIncome = thisMonthTransactions.filter { it.type == "income" }.sumOf { it.amount }
-                val totalExpense = thisMonthTransactions.filter { it.type == "expense" }.sumOf { it.amount }
+                val totalIncome = allTransactions.filter { it.type == "income" }.sumOf { it.amount }
+                val totalExpense = allTransactions.filter { it.type == "expense" }.sumOf { it.amount }
                 val balance = totalIncome - totalExpense
 
-                val expenseByCategory = thisMonthTransactions.filter { it.type == "expense" }
+                val expenseByCategory = allTransactions.filter { it.type == "expense" }
                     .groupBy { it.category }
-                    .mapValues { entry -> entry.value.sumOf { it.amount } }
+                    .mapValues { it.value.sumOf { tx -> tx.amount } }
                     .toList()
                     .sortedByDescending { it.second }
                     .take(3)
                     .joinToString(", ") { "${it.first}: ${it.second.toCurrencyString()}" }
+
                 val budgetAnalysis = if (allBudgets.isNotEmpty()) {
-                    val details = allBudgets.joinToString("\n") { budget ->
-                        val spentForBudget = allTransactions.filter { tx ->
-                            tx.category == budget.category &&
-                                    tx.type == "expense" &&
-                                    tx.date.toDate() >= budget.startDate &&
-                                    tx.date.toDate() <= budget.endDate
-                        }.sumOf { it.amount }
-
-                        val percent = if (budget.allocatedAmount > 0) (spentForBudget / budget.allocatedAmount * 100).toInt() else 0
-                        val status = when {
-                            percent >= 100 -> "VƯỢT QUÁ"
-                            percent >= 80 -> "Cảnh báo"
-                            else -> "An toàn"
-                        }
-                        "- ${budget.category}: Đã tiêu ${spentForBudget.toCurrencyString()}/${budget.allocatedAmount.toCurrencyString()} ($percent% - $status)"
+                    allBudgets.joinToString("\n") { budget ->
+                        "- ${budget.category}: ${budget.spentAmount.toCurrencyString()} / ${budget.allocatedAmount.toCurrencyString()}"
                     }
-                    "\nTÌNH HÌNH NGÂN SÁCH:\n$details"
-                } else {
-                    "\nTÌNH HÌNH NGÂN SÁCH: Chưa thiết lập ngân sách."
-                }
+                } else "No budgets set."
 
-                // 3. Tạo ngữ cảnh cho AI
+                // 3. Sử dụng lại PromptUtils như yêu cầu của bạn
                 financialContextPrompt = PromptUtils.getFinancialAdvisorPrompt(
                     totalIncome, totalExpense, balance, expenseByCategory, budgetAnalysis
                 )
 
                 _chatState.value = ChatUiState.Success
-
-                // Tin nhắn chào mừng
-                val welcomeText = "Xin chào! Tôi là trợ lý tài chính của bạn. Dựa trên dữ liệu tháng này, tôi có thể giúp gì cho bạn?"
-                addMessage(ChatMessage(content = welcomeText, isFromUser = false))
+                
+                // Nếu đây là lần đầu mở app, hiện tin nhắn chào
+                if (_messages.value.isEmpty()) {
+                    addMessage(ChatMessage(content = "Hello! I'm your AI Financial Advisor. Ask me anything about your spending!", isFromUser = false))
+                }
+                onComplete()
 
             } catch (e: Exception) {
-                Log.e("ChatViewModel", "Lỗi khởi tạo: ${e.message}", e)
+                Log.e("ChatViewModel", "Firebase Data Error: ${e.message}", e)
                 _chatState.value = ChatUiState.Success
-                addMessage(ChatMessage(content = "Hệ thống đã sẵn sàng. Mời bạn đặt câu hỏi.", isFromUser = false))
+                onComplete()
             }
         }
     }
@@ -116,37 +97,29 @@ class ChatViewModel @Inject constructor(
     fun sendMessage(messageContent: String) {
         if (messageContent.isBlank()) return
 
-        // 1. Hiện tin nhắn người dùng (isFromUser = true)
-        val userMessage = ChatMessage(content = messageContent, isFromUser = true)
-        addMessage(userMessage)
-
-        // 2. Hiện loading message
+        addMessage(ChatMessage(content = messageContent, isFromUser = true))
         val loadingMessageId = UUID.randomUUID().toString()
         addMessage(ChatMessage(id = loadingMessageId, content = "", isFromUser = false, isLoading = true))
 
         viewModelScope.launch {
-            try {
-                // 3. Tạo Prompt chuyên cho việc TƯ VẤN (Advisor Prompt)
-                val prompt = PromptUtils.getChatAdvisorPrompt(financialContextPrompt, messageContent)
+            // Cập nhật lại ngữ cảnh một lần nữa để lấy dữ liệu mới nhất nếu người dùng vừa add transaction
+            updateFinancialContext {
+                viewModelScope.launch {
+                    try {
+                        val prompt = PromptUtils.getChatAdvisorPrompt(financialContextPrompt, messageContent)
+                        val result = ollamaRepository.sendMessage(prompt, jsonMode = false)
 
+                        removeMessage(loadingMessageId)
 
-                // Gọi API với jsonMode = false (để nhận văn bản thường)
-                val result = ollamaRepository.sendMessage(prompt, jsonMode = false)
-
-                removeMessage(loadingMessageId)
-
-                result.fold(
-                    onSuccess = { responseText ->
-                        // Hiển thị trực tiếp câu trả lời của AI
-                        addMessage(ChatMessage(content = responseText.trim(), isFromUser = false))
-                    },
-                    onFailure = { error ->
-                        addMessage(ChatMessage(content = "Lỗi kết nối: ${error.message}", isFromUser = false, isError = true))
+                        result.fold(
+                            onSuccess = { addMessage(ChatMessage(content = it.trim(), isFromUser = false)) },
+                            onFailure = { addMessage(ChatMessage(content = "Connection error: ${it.message}", isFromUser = false, isError = true)) }
+                        )
+                    } catch (e: Exception) {
+                        removeMessage(loadingMessageId)
+                        addMessage(ChatMessage(content = "Error: ${e.message}", isFromUser = false, isError = true))
                     }
-                )
-            } catch (e: Exception) {
-                removeMessage(loadingMessageId)
-                addMessage(ChatMessage(content = "Đã xảy ra lỗi: ${e.message}", isFromUser = false, isError = true))
+                }
             }
         }
     }

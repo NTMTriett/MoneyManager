@@ -57,7 +57,7 @@ import com.example.moneymanager.ui.theme.MediumGreen
 import com.example.moneymanager.ui.theme.TextGray
 import com.example.moneymanager.ui.viewmodel.AuthViewModel
 import com.example.moneymanager.ui.screens.chat.ChatScreen
-import com.example.moneymanager.ui.viewmodel.ChatViewModel // Đảm bảo đã import ViewModel này
+import com.example.moneymanager.ui.viewmodel.ChatViewModel
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,7 +77,6 @@ fun MainContainer(
                     tonalElevation = 8.dp,
                     modifier = Modifier.height(80.dp)
                 ) {
-                    // 1. Dashboard
                     NavBarItem(
                         selected = selectedTabIndex == 0,
                         onClick = {
@@ -90,7 +89,6 @@ fun MainContainer(
                         label = "Home"
                     )
 
-                    // 2. Transactions
                     NavBarItem(
                         selected = selectedTabIndex == 1,
                         onClick = {
@@ -101,38 +99,35 @@ fun MainContainer(
                         label = "Transactions"
                     )
 
-                    // 3. VIVID ADD BUTTON (Center)
                     NavigationBarItem(
-                        selected = false, // Never "selected" in the traditional sense
+                        selected = false,
                         onClick = {
                             selectedTabIndex = 2
                             navController.navigate(Screen.AddTransaction.route)
                         },
                         icon = {
-                            // Custom "Floating" Look
                             Box(
                                 modifier = Modifier
-                                    .size(56.dp) // Large touch target
-                                    .shadow(8.dp, CircleShape) // Add depth
+                                    .size(56.dp)
+                                    .shadow(8.dp, CircleShape)
                                     .clip(CircleShape)
-                                    .background(MediumGreen), // Vivid Emerald Background
+                                    .background(MediumGreen),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Add,
                                     contentDescription = "Add Transaction",
                                     tint = Color.White,
-                                    modifier = Modifier.size(32.dp) // Large Icon
+                                    modifier = Modifier.size(32.dp)
                                 )
                             }
                         },
-                        label = { /* No label for cleaner look */ },
+                        label = { },
                         colors = NavigationBarItemDefaults.colors(
-                            indicatorColor = Color.Transparent // Remove selection pill
+                            indicatorColor = Color.Transparent
                         )
                     )
 
-                    // 4. Budgets
                     NavBarItem(
                         selected = selectedTabIndex == 3,
                         onClick = {
@@ -143,7 +138,6 @@ fun MainContainer(
                         label = "Budgets"
                     )
 
-                    // 5. Profile
                     NavBarItem(
                         selected = selectedTabIndex == 4,
                         onClick = {
@@ -197,7 +191,7 @@ fun RowScope.NavBarItem(
         colors = NavigationBarItemDefaults.colors(
             selectedIconColor = MediumGreen,
             selectedTextColor = MediumGreen,
-            indicatorColor = MediumGreen.copy(alpha = 0.1f), // Subtle pill background
+            indicatorColor = MediumGreen.copy(alpha = 0.1f),
             unselectedIconColor = TextGray,
             unselectedTextColor = TextGray
         )
@@ -213,7 +207,6 @@ fun NavGraph(
     val isAuthenticated by authViewModel.isAuthenticated.collectAsState(initial = false)
     val authState by authViewModel.authState.collectAsState()
 
-    // Handle auth state changes
     when (authState) {
         is AuthViewModel.AuthState.SignedOut,
         is AuthViewModel.AuthState.AccountDeleted -> {
@@ -230,7 +223,6 @@ fun NavGraph(
         startDestination = if (isAuthenticated) Screen.Dashboard.route else Screen.Login.route,
         modifier = modifier
     ) {
-        // Auth screens
         composable(Screen.Login.route) {
             AuthScreen(
                 onAuthSuccess = {
@@ -241,7 +233,6 @@ fun NavGraph(
             )
         }
 
-        // Main app screens
         composable(Screen.Dashboard.route) {
             DashboardScreen(
                 onNavigateToAddTransaction = { navController.navigate(Screen.AddTransaction.route) },
@@ -305,16 +296,15 @@ fun NavGraph(
         }
 
         composable(Screen.Budgets.route) {
-            BudgetScreen()
+            BudgetScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
+        
         composable(Screen.Chat.route) {
-            // 1. Lấy instance của ChatViewModel thông qua Hilt
             val chatViewModel: ChatViewModel = hiltViewModel()
-
             ChatScreen(
-                // 2. Truyền viewModel vào
                viewModel = chatViewModel,
-                // 3. Đổi tên tham số 'onNavigateBack' thành 'onClose' để khớp với định nghĩa của ChatScreen
                 onClose = { navController.popBackStack() }
             )
         }

@@ -2,34 +2,49 @@ package com.example.moneymanager.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// --- Vibrant Modern Theme (Blue, Purple, Green) ---
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+// Blue (Primary)
+val MainBlue = Color(0xFF1A73E8)
+val LightBlue = Color(0xFFD2E3FC)
+val DarkBlue = Color(0xFF174EA6)
 
-// New Green Theme Colors
-val DarkGreen = Color(0xFF004D40)
-val MediumGreen = Color(0xFF00796B)
-val LightGreen = Color(0xFF00A79B)
-val BackgroundGray = Color(0xFFF0F2F5)
-val TextGray = Color(0xFF6C757D)
+// Purple (Secondary)
+val MainPurple = Color(0xFF8E24AA)
+val LightPurple = Color(0xFFF3E5F5)
+val DarkPurple = Color(0xFF4A148C)
 
-// Original Custom Colors
-val Primary = Color(0xFF7F3DFF)
-val Background = Color(0xFFF7F7F7)
-val OnPrimary = Color.White
-val TextPrimary = Color(0xFF212121)
-val TextSecondary = Color(0xFF757575)
-val CardBackground = Color.White
-val Divider = Color(0xFFF0F0F0)
-val Success = Color(0xFF4CAF50)
-val Error = Color(0xFFF44336)
+// Green (Tertiary/Success)
+val MainGreen = Color(0xFF2E7D32)
+val LightGreen = Color(0xFFE8F5E9)
+val DarkGreen = Color(0xFF1B5E20)
 
-val LightGreenOriginal = Color(0xFFE8F5E9)
+// Functional Colors
+val ErrorRed = Color(0xFFD32F2F)
 val LightRed = Color(0xFFFFEBEE)
+val WarningOrange = Color(0xFFF57C00)
 
-val PurpleStart = Color(0xFF4A00E0)
-val PurpleEnd = Color(0xFF8E2DE2)
+// Neutral Colors
+val PureWhite = Color(0xFFFFFFFF)
+val PureBlack = Color(0xFF000000)
+val BackgroundGray = Color(0xFFF8F9FA)
+val SurfaceGray = Color(0xFFFFFFFF)
+val TextPrimary = Color(0xFF202124)
+val TextSecondary = Color(0xFF5F6368)
+val DividerGray = Color(0xFFDADCE0)
+
+// Dark Mode Specific
+val DarkBackground = Color(0xFF121212)
+val DarkSurface = Color(0xFF1E1E1E)
+val DarkTextPrimary = Color(0xFFE8EAED)
+val DarkTextSecondary = Color(0xFFBDC1C6)
+
+// Keep some legacy names if they are used elsewhere to avoid immediate breakages
+val Primary = MainBlue
+val MediumGreen = MainGreen
+val TextGray = TextSecondary
+val Background = BackgroundGray
+val OnPrimary = Color.White
+val CardBackground = Color.White
+val Success = MainGreen
+val Error = ErrorRed

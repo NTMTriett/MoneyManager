@@ -1,8 +1,6 @@
 package com.example.moneymanager.ui.screens.transaction
 
-import android.os.Build
-import androidx.annotation.RequiresApi
-import androidx.compose.foundation.clickable // Added this import
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -14,7 +12,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,9 +31,9 @@ import com.example.moneymanager.ui.theme.TextPrimary
 import com.example.moneymanager.ui.viewmodel.TransactionViewModel
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Locale
 
-@RequiresApi(Build.VERSION_CODES.O)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionsScreen(
@@ -55,91 +51,70 @@ fun TransactionsScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
 
-    // Filter states
-    var selectedTypeFilter by remember { mutableStateOf("all") } // all, income, expense
-    var isMonthFilterExpanded by remember { mutableStateOf(false) }
+    var selectedTypeFilter by remember { mutableStateOf("all") } 
     var selectedMonthFilter by remember { mutableStateOf("All Time") }
 
     val months = listOf(
-        "All Time",
-        "January", "February", "March", "April", "May", "June",
+        "All Time", "January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December"
     )
 
-    // Load initial data
     LaunchedEffect(Unit) {
         transactionViewModel.loadAllTransactions()
     }
 
-    // Apply filters (Type/Month) - Search is handled by VM on top of this
+    // Fixed: Sử dụng Calendar thay cho YearMonth để hỗ trợ API 24
     LaunchedEffect(selectedTypeFilter, selectedMonthFilter) {
-        when {
-            selectedTypeFilter != "all" && selectedMonthFilter != "All Time" -> {
-                val monthIndex = months.indexOf(selectedMonthFilter)
-                if (monthIndex > 0) {
-                    val currentYear = java.time.Year.now().value
-                    val yearMonth = java.time.YearMonth.of(currentYear, monthIndex)
-                    transactionViewModel.loadTransactionsByTypeAndMonth(selectedTypeFilter, yearMonth)
-                }
-            }
-            selectedTypeFilter != "all" -> transactionViewModel.loadTransactionsByType(selectedTypeFilter)
-            selectedMonthFilter != "All Time" -> {
-                val monthIndex = months.indexOf(selectedMonthFilter)
-                if (monthIndex > 0) {
-                    val currentYear = java.time.Year.now().value
-                    val yearMonth = java.time.YearMonth.of(currentYear, monthIndex)
-                    transactionViewModel.loadTransactionsByMonth(yearMonth)
-                }
-            }
-            else -> transactionViewModel.loadAllTransactions()
+        val monthIndex = months.indexOf(selectedMonthFilter)
+        if (selectedMonthFilter == "All Time") {
+            if (selectedTypeFilter == "all") transactionViewModel.loadAllTransactions()
+            else transactionViewModel.loadTransactionsByType(selectedTypeFilter)
+        } else {
+            val calendar = Calendar.getInstance()
+            // Truyền tham số tháng và năm thủ công vào ViewModel
+            transactionViewModel.loadTransactionsByMonthCompatible(monthIndex, calendar.get(Calendar.YEAR), selectedTypeFilter)
         }
     }
 
     Scaffold(
         topBar = {
-            when {
-                isSelectionMode -> {
-                    SelectionTopAppBar(
-                        selectedCount = selectedTransactionIds.size,
-                        totalCount = (transactionsState as? TransactionViewModel.TransactionsState.Success)?.transactions?.size ?: 0,
-                        onClose = { transactionViewModel.toggleSelectionMode() },
-                        onSelectAll = {
-                            if (transactionsState is TransactionViewModel.TransactionsState.Success) {
-                                val transactions = (transactionsState as TransactionViewModel.TransactionsState.Success).transactions
-                                if (selectedTransactionIds.size == transactions.size) transactionViewModel.clearSelection()
-                                else transactionViewModel.selectAllTransaction(transactions)
-                            }
+            if (isSelectionMode) {
+                SelectionTopAppBar(
+                    selectedCount = selectedTransactionIds.size,
+                    totalCount = (transactionsState as? TransactionViewModel.TransactionsState.Success)?.transactions?.size ?: 0,
+                    onClose = { transactionViewModel.toggleSelectionMode() },
+                    onSelectAll = {
+                        if (transactionsState is TransactionViewModel.TransactionsState.Success) {
+                            val transactions = (transactionsState as TransactionViewModel.TransactionsState.Success).transactions
+                            if (selectedTransactionIds.size == transactions.size) transactionViewModel.clearSelection()
+                            else transactionViewModel.selectAllTransaction(transactions)
                         }
-                    )
-                }
-                isSearchActive -> {
-                    SearchTopAppBar(
-                        query = searchQuery,
-                        onQueryChange = { transactionViewModel.onSearchQueryChanged(it) },
-                        onClose = {
-                            isSearchActive = false
-                            transactionViewModel.onSearchQueryChanged("") // Clear search when closing
+                    }
+                )
+            } else if (isSearchActive) {
+                SearchTopAppBar(
+                    query = searchQuery,
+                    onQueryChange = { transactionViewModel.onSearchQueryChanged(it) },
+                    onClose = {
+                        isSearchActive = false
+                        transactionViewModel.onSearchQueryChanged("")
+                    }
+                )
+            } else {
+                TopAppBar(
+                    title = { Text("History", fontWeight = FontWeight.Bold) },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                         }
-                    )
-                }
-                else -> {
-                    TopAppBar(
-                        title = { Text("Transactions", fontWeight = FontWeight.Bold) },
-                        navigationIcon = {
-                            IconButton(onClick = onNavigateBack) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                            }
-                        },
-                        actions = {
-                            IconButton(onClick = { isSearchActive = true }) {
-                                Icon(Icons.Default.Search, contentDescription = "Search")
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.White
-                        )
-                    )
-                }
+                    },
+                    actions = {
+                        IconButton(onClick = { isSearchActive = true }) {
+                            Icon(Icons.Default.Search, "Search")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                )
             }
         },
         floatingActionButton = {
@@ -148,41 +123,20 @@ fun TransactionsScreen(
                     onClick = { showDeleteDialog = true },
                     containerColor = MaterialTheme.colorScheme.errorContainer,
                     contentColor = MaterialTheme.colorScheme.onErrorContainer
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete Selected")
-                }
+                ) { Icon(Icons.Default.Delete, "Delete") }
             } else {
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    FloatingActionButton(
-                        onClick = onNavigateToAddTransaction,
-                        containerColor = MediumGreen,
-                        contentColor = Color.White
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Transaction")
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    FloatingActionButton(onClick = onNavigateToAddTransaction, containerColor = MediumGreen, contentColor = Color.White) {
+                        Icon(Icons.Default.Add, "Add")
                     }
-                    SmallFloatingActionButton(
-                        onClick = { transactionViewModel.toggleSelectionMode() },
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = TextGray
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = "Select Transactions")
+                    SmallFloatingActionButton(onClick = { transactionViewModel.toggleSelectionMode() }, containerColor = MaterialTheme.colorScheme.surfaceVariant) {
+                        Icon(Icons.Default.Delete, "Select")
                     }
                 }
             }
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = MaterialTheme.colorScheme.background
+        }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 16.dp)
-        ) {
-            // Filters (Hide filters if search is active to avoid clutter, optional)
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp)) {
             if (!isSearchActive) {
                 TransactionFilters(
                     selectedType = selectedTypeFilter,
@@ -194,61 +148,26 @@ fun TransactionsScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // Transactions list
-            when (transactionsState) {
+            when (val state = transactionsState) {
                 is TransactionViewModel.TransactionsState.Loading -> {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = MediumGreen)
-                    }
+                    Box(modifier = Modifier.fillMaxSize()) { CircularProgressIndicator(Modifier.align(Alignment.Center), color = MediumGreen) }
                 }
                 is TransactionViewModel.TransactionsState.Error -> {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        Text(
-                            text = (transactionsState as TransactionViewModel.TransactionsState.Error).message,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.align(Alignment.Center)
-                        )
-                    }
+                    Box(modifier = Modifier.fillMaxSize()) { Text(state.message, color = Color.Red, modifier = Modifier.align(Alignment.Center)) }
                 }
                 is TransactionViewModel.TransactionsState.Success -> {
-                    val transactions = (transactionsState as TransactionViewModel.TransactionsState.Success).transactions
-
-                    if (transactions.isEmpty()) {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            Column(
-                                modifier = Modifier.align(Alignment.Center),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Icon(
-                                    imageVector = if(isSearchActive) Icons.Default.SearchOff else Icons.Default.ReceiptLong,
-                                    contentDescription = null,
-                                    tint = Color.LightGray,
-                                    modifier = Modifier.size(64.dp)
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text(
-                                    text = if(isSearchActive) "No results found" else "No transactions yet",
-                                    color = TextGray
-                                )
-                            }
-                        }
+                    if (state.transactions.isEmpty()) {
+                        EmptyStateView(isSearchActive)
                     } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(bottom = 80.dp, top = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(transactions, key = { it.id }) { transaction ->
+                        LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp, top = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            items(state.transactions, key = { it.id }) { transaction ->
                                 TransactionListItem(
                                     transaction = transaction,
                                     isSelectionMode = isSelectionMode,
                                     isSelected = selectedTransactionIds.contains(transaction.id),
                                     onTransactionClick = {
-                                        if (isSelectionMode) {
-                                            transactionViewModel.toggleTransactionSelection(transaction.id)
-                                        } else {
-                                            onTransactionClick(transaction.id)
-                                        }
+                                        if (isSelectionMode) transactionViewModel.toggleTransactionSelection(transaction.id)
+                                        else onTransactionClick(transaction.id)
                                     },
                                     onTransactionLongClick = {
                                         if (!isSelectionMode) {
@@ -266,157 +185,73 @@ fun TransactionsScreen(
     }
 
     if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("Delete Transactions") },
-            text = { Text("Delete ${selectedTransactionIds.size} selected transaction(s)? This cannot be undone.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        transactionViewModel.deleteSelectedTransactions()
-                        showDeleteDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Delete") }
-            },
-            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } }
+        DeleteConfirmDialog(
+            count = selectedTransactionIds.size,
+            onDismiss = { showDeleteDialog = false },
+            onConfirm = { transactionViewModel.deleteSelectedTransactions(); showDeleteDialog = false }
         )
     }
 }
 
+@Composable
+fun EmptyStateView(isSearchActive: Boolean) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(if (isSearchActive) Icons.Default.SearchOff else Icons.Default.ReceiptLong, null, tint = Color.LightGray, modifier = Modifier.size(64.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(if (isSearchActive) "No results found" else "No transactions yet", color = TextGray)
+        }
+    }
+}
+
+@Composable
+fun DeleteConfirmDialog(count: Int, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete Items") },
+        text = { Text("Delete $count selected transactions?") },
+        confirmButton = { Button(onClick = onConfirm, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) { Text("Delete") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SearchTopAppBar(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onClose: () -> Unit
-) {
+fun SearchTopAppBar(query: String, onQueryChange: (String) -> Unit, onClose: () -> Unit) {
     TopAppBar(
-        title = {
-            OutlinedTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                placeholder = { Text("Search transactions...") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent
-                ),
-                textStyle = LocalTextStyle.current.copy(fontSize = 18.sp)
-            )
-        },
-        navigationIcon = {
-            IconButton(onClick = onClose) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
-            }
-        },
-        actions = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Default.Close, "Clear")
-                }
-            }
-        },
+        title = { OutlinedTextField(value = query, onValueChange = onQueryChange, placeholder = { Text("Search...") }, modifier = Modifier.fillMaxWidth(), singleLine = true, colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent)) },
+        navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
     )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SelectionTopAppBar(
-    selectedCount: Int,
-    totalCount: Int,
-    onClose: () -> Unit,
-    onSelectAll: () -> Unit
-) {
+fun SelectionTopAppBar(selectedCount: Int, totalCount: Int, onClose: () -> Unit, onSelectAll: () -> Unit) {
     TopAppBar(
         title = { Text("$selectedCount selected") },
-        navigationIcon = {
-            IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Close") }
-        },
-        actions = {
-            IconButton(onClick = onSelectAll) {
-                Icon(
-                    if (selectedCount == totalCount && totalCount > 0) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
-                    "Select All"
-                )
-            }
-        },
+        navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.Close, null) } },
+        actions = { IconButton(onClick = onSelectAll) { Icon(if (selectedCount == totalCount) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank, null) } },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TransactionFilters(
-    selectedType: String,
-    onTypeSelected: (String) -> Unit,
-    selectedMonth: String,
-    onMonthSelected: (String) -> Unit,
-    months: List<String>
-) {
-    var isMonthExpanded by remember { mutableStateOf(false) }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        FilterChip(
-            selected = selectedType == "all",
-            onClick = { onTypeSelected("all") },
-            label = { Text("All") }
-        )
-        FilterChip(
-            selected = selectedType == "income",
-            onClick = { onTypeSelected("income") },
-            label = { Text("Income") },
-            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFE8F5E9))
-        )
-        FilterChip(
-            selected = selectedType == "expense",
-            onClick = { onTypeSelected("expense") },
-            label = { Text("Expense") },
-            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFFFEBEE))
-        )
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        ExposedDropdownMenuBox(
-            expanded = isMonthExpanded,
-            onExpandedChange = { isMonthExpanded = it }
-        ) {
-            Row(
-                modifier = Modifier
-                    .menuAnchor()
-                    .clickable { isMonthExpanded = true }
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = selectedMonth,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = TextPrimary
-                )
-                Icon(Icons.Default.KeyboardArrowDown, null, tint = TextGray)
+fun TransactionFilters(selectedType: String, onTypeSelected: (String) -> Unit, selectedMonth: String, onMonthSelected: (String) -> Unit, months: List<String>) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        FilterChip(selected = selectedType == "all", onClick = { onTypeSelected("all") }, label = { Text("All") })
+        FilterChip(selected = selectedType == "income", onClick = { onTypeSelected("income") }, label = { Text("Income") })
+        FilterChip(selected = selectedType == "expense", onClick = { onTypeSelected("expense") }, label = { Text("Expense") })
+        Spacer(Modifier.weight(1f))
+        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+            Row(modifier = Modifier.menuAnchor().clickable { expanded = true }.padding(8.dp)) {
+                Text(selectedMonth, fontWeight = FontWeight.Bold)
+                Icon(Icons.Default.ArrowDropDown, null)
             }
-            ExposedDropdownMenu(
-                expanded = isMonthExpanded,
-                onDismissRequest = { isMonthExpanded = false }
-            ) {
-                months.forEach { month ->
-                    DropdownMenuItem(
-                        text = { Text(month) },
-                        onClick = {
-                            onMonthSelected(month)
-                            isMonthExpanded = false
-                        }
-                    )
-                }
+            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                months.forEach { m -> DropdownMenuItem(text = { Text(m) }, onClick = { onMonthSelected(m); expanded = false }) }
             }
         }
     }
@@ -424,92 +259,27 @@ fun TransactionFilters(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun TransactionListItem(
-    transaction: Transaction,
-    onTransactionClick: () -> Unit,
-    isSelectionMode: Boolean,
-    isSelected: Boolean,
-    onTransactionLongClick: () -> Unit
-) {
+fun TransactionListItem(transaction: Transaction, onTransactionClick: () -> Unit, isSelectionMode: Boolean, isSelected: Boolean, onTransactionLongClick: () -> Unit) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = onTransactionClick,
-                onLongClick = onTransactionLongClick
-            ),
+        modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onTransactionClick, onLongClick = onTransactionLongClick),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else Color.White
-        ),
-        border = if (isSelected) BorderStroke(2.dp, MediumGreen) else null,
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
+        colors = CardDefaults.cardColors(containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(0.5f) else Color.White),
+        border = if (isSelected) BorderStroke(2.dp, MediumGreen) else null
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             if (isSelectionMode) {
-                Checkbox(
-                    checked = isSelected,
-                    onCheckedChange = { onTransactionClick() },
-                    colors = CheckboxDefaults.colors(checkedColor = MediumGreen)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+                Checkbox(checked = isSelected, onCheckedChange = { onTransactionClick() })
+                Spacer(Modifier.width(8.dp))
             }
-
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        if (transaction.type == "income") Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (transaction.type == "income") Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
-                    contentDescription = null,
-                    tint = if (transaction.type == "income") Color(0xFF4CAF50) else Color(0xFFF44336),
-                    modifier = Modifier.size(24.dp)
-                )
+            Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(if (transaction.type == "income") Color(0xFFE8F5E9) else Color(0xFFFFEBEE)), contentAlignment = Alignment.Center) {
+                Icon(if (transaction.type == "income") Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, null, tint = if (transaction.type == "income") Color(0xFF4CAF50) else Color(0xFFF44336))
             }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = transaction.category,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
-                )
-
-                if (transaction.description.isNotEmpty()) {
-                    Text(
-                        text = transaction.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextGray,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                } else {
-                    Text(
-                        text = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(transaction.date.toDate()),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextGray
-                    )
-                }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(transaction.category, fontWeight = FontWeight.Bold)
+                Text(transaction.description, maxLines = 1, overflow = TextOverflow.Ellipsis, color = TextGray, fontSize = 12.sp)
             }
-
-            Text(
-                text = (if (transaction.type == "income") "+" else "-") +
-                        NumberFormat.getCurrencyInstance().format(transaction.amount),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = if (transaction.type == "income") Color(0xFF4CAF50) else Color(0xFFF44336)
-            )
+            Text(NumberFormat.getCurrencyInstance().format(transaction.amount), fontWeight = FontWeight.Black, color = if (transaction.type == "income") Color(0xFF4CAF50) else Color(0xFFF44336))
         }
     }
 }
