@@ -9,7 +9,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.moneymanager.data.model.Transaction
 import com.example.moneymanager.data.repository.CategoryRepository
 import com.example.moneymanager.data.repository.TransactionRepository
+import com.example.moneymanager.data.repository.OllamaRepository
 import com.example.moneymanager.data.model.AiTransactionData
+import com.example.moneymanager.util.PromptUtils
 import com.example.moneymanager.BuildConfig
 import com.google.firebase.Timestamp
 import com.google.gson.Gson
@@ -25,7 +27,8 @@ import javax.inject.Inject
 @HiltViewModel
 class TransactionViewModel @Inject constructor(
     private val transactionRepository: TransactionRepository,
-    private val categoryRepository: CategoryRepository
+    private val categoryRepository: CategoryRepository,
+    private val ollamaRepository: OllamaRepository // Inject Ollama
 ) : ViewModel() {
 
     private val _transactionsState = MutableStateFlow<TransactionsState>(TransactionsState.Loading)
@@ -62,7 +65,7 @@ class TransactionViewModel @Inject constructor(
     fun scanBill(bitmap: Bitmap) {
         viewModelScope.launch {
             _quickAddState.value = QuickAddState.Loading
-            val prompt = "Extract receipt data into JSON: { amount, type, category, description }"
+            val prompt = "Extract receipt data into JSON: { amount, type, category, description }. Rules: Type must be 'income' or 'expense'. Amount must be number."
             try {
                 val response = generativeModel.generateContent(content { image(bitmap); text(prompt) })
                 val rawText = response.text ?: ""
@@ -75,6 +78,34 @@ class TransactionViewModel @Inject constructor(
         }
     }
 
+    // --- AI QUICK ADD (Dùng Ollama theo ý bạn) ---
+    fun processQuickAdd(input: String) {
+        if (input.isBlank()) return
+        viewModelScope.launch {
+            _quickAddState.value = QuickAddState.Loading
+            try {
+                // Lấy danh sách category để AI gán cho đúng
+                val categories = categoryRepository.getAllCategories().first().joinToString(",") { it.name }
+                val prompt = PromptUtils.getQuickAddPrompt(input, categories)
+
+                val result = ollamaRepository.sendMessage(prompt, modelName = "qwen2.5:3b", jsonMode = true)
+                
+                result.fold(
+                    onSuccess = { jsonResponse ->
+                        val cleanJson = jsonResponse.substringAfter("{").substringBeforeLast("}").let { "{ $it }" }
+                        val aiData = gson.fromJson(cleanJson, AiTransactionData::class.java)
+                        saveAiTransaction(aiData)
+                    },
+                    onFailure = { 
+                        _quickAddState.value = QuickAddState.Error("Ollama connection error")
+                    }
+                )
+            } catch (e: Exception) {
+                _quickAddState.value = QuickAddState.Error("Process error: ${e.message}")
+            }
+        }
+    }
+
     private fun saveAiTransaction(aiData: AiTransactionData) {
         viewModelScope.launch {
             val calendar = Calendar.getInstance()
@@ -82,33 +113,24 @@ class TransactionViewModel @Inject constructor(
                 amount = aiData.amount ?: 0.0,
                 type = aiData.type ?: "expense",
                 category = aiData.category ?: "Other",
-                description = aiData.description ?: "Scanned Bill",
+                description = aiData.description ?: "AI Added",
                 date = Timestamp.now(),
                 month = calendar.get(Calendar.MONTH) + 1,
                 year = calendar.get(Calendar.YEAR)
             )
-            transactionRepository.addTransaction(transaction).onSuccess { loadAllTransactions() }
+            transactionRepository.addTransaction(transaction).onSuccess { 
+                _quickAddState.value = QuickAddState.Success("Added ${transaction.amount}")
+                loadAllTransactions() 
+            }
         }
     }
 
-    fun processQuickAdd(input: String) {
-        viewModelScope.launch {
-            _quickAddState.value = QuickAddState.Loading
-            try {
-                val response = generativeModel.generateContent("Convert to JSON: $input")
-                val cleanJson = response.text?.substringAfter("{")?.substringBeforeLast("}")?.let { "{ $it }" } ?: ""
-                val aiData = gson.fromJson(cleanJson, AiTransactionData::class.java)
-                saveAiTransaction(aiData)
-            } catch (e: Exception) { _quickAddState.value = QuickAddState.Error("Error") }
-        }
-    }
-
-    // --- DATA LOADING & FILTERING ---
+    // --- DATA LOADING & CRUD ---
     fun loadAllTransactions() {
         viewModelScope.launch {
             _transactionsState.value = TransactionsState.Loading
             transactionRepository.getAllTransactions()
-                .catch { _transactionsState.value = TransactionsState.Error(it.message ?: "Error") }
+                .catch { e -> _transactionsState.value = TransactionsState.Error(e.message ?: "Error") }
                 .collectLatest { transactions ->
                     _cachedTransactions = transactions
                     _transactionsState.value = TransactionsState.Success(transactions)
@@ -128,17 +150,13 @@ class TransactionViewModel @Inject constructor(
         }
     }
 
-    // API 24 Compatible Monthly Loading
     fun loadTransactionsByMonthCompatible(month: Int, year: Int, type: String = "all") {
         viewModelScope.launch {
             _transactionsState.value = TransactionsState.Loading
             transactionRepository.getAllTransactions().collectLatest { all ->
                 val filtered = all.filter { tx ->
                     val cal = Calendar.getInstance().apply { time = tx.date.toDate() }
-                    val matchMonth = (cal.get(Calendar.MONTH) + 1) == month
-                    val matchYear = cal.get(Calendar.YEAR) == year
-                    val matchType = if (type == "all") true else tx.type == type
-                    matchMonth && matchYear && matchType
+                    (cal.get(Calendar.MONTH) + 1) == month && cal.get(Calendar.YEAR) == year && (if (type == "all") true else tx.type == type)
                 }
                 _cachedTransactions = filtered
                 _transactionsState.value = TransactionsState.Success(filtered)
@@ -157,14 +175,11 @@ class TransactionViewModel @Inject constructor(
         if (query.isBlank()) {
             _transactionsState.value = TransactionsState.Success(_cachedTransactions)
         } else {
-            val filtered = _cachedTransactions.filter { 
-                it.category.contains(query, ignoreCase = true) || it.description.contains(query, ignoreCase = true) 
-            }
+            val filtered = _cachedTransactions.filter { it.category.contains(query, ignoreCase = true) || it.description.contains(query, ignoreCase = true) }
             _transactionsState.value = TransactionsState.Success(filtered)
         }
     }
 
-    // --- CRUD ---
     fun getTransactionById(id: String) {
         viewModelScope.launch {
             transactionRepository.getTransactionById(id).fold(onSuccess = { _currentTransaction.value = it }, onFailure = {})
@@ -183,7 +198,6 @@ class TransactionViewModel @Inject constructor(
         viewModelScope.launch { transactionRepository.deleteTransaction(id).onSuccess { loadAllTransactions() } }
     }
 
-    // --- SELECTION ---
     fun toggleSelectionMode() {
         _isSelectionMode.value = !_isSelectionMode.value
         if (!_isSelectionMode.value) _selectedTransactionIds.value = emptySet()

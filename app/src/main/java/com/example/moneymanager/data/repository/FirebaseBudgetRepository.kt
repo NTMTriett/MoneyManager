@@ -17,9 +17,11 @@ class FirebaseBudgetRepository @Inject constructor(
 ) : BudgetRepository {
 
     private val userId: String
-        get() = auth.currentUser?.uid ?: throw IllegalStateException("User not logged in")
+        get() = auth.currentUser?.uid ?: ""
 
     override fun getBudgets(date: Date): Flow<List<Budget>> {
+        // --- CÁCH 1: Lọc trực tiếp trên Server (Yêu cầu phải tạo Index trên Firebase Console thành công) ---
+        /*
         return firestore.collection("budgets")
             .whereEqualTo("userId", userId)
             .whereGreaterThanOrEqualTo("endDate", date)
@@ -28,11 +30,25 @@ class FirebaseBudgetRepository @Inject constructor(
             .map { snapshot ->
                 snapshot.toObjects(Budget::class.java)
             }
+        */
+
+        // --- CÁCH 2: Chỉ lấy theo userId, lọc ngày tháng tại App (An toàn, không lo lỗi Index) ---
+        return firestore.collection("budgets")
+            .whereEqualTo("userId", userId)
+            .snapshots()
+            .map { snapshot ->
+                val allBudgets = snapshot.toObjects(Budget::class.java)
+                allBudgets.filter { budget ->
+                    // Lọc những ngân sách mà ngày hiện tại nằm trong khoảng thời gian hiệu lực
+                    date.time >= budget.startDate.time && date.time <= budget.endDate.time
+                }
+            }
     }
 
     override suspend fun saveBudget(budget: Budget): Result<Unit> = try {
+        val uId = auth.currentUser?.uid ?: ""
         firestore.collection("budgets")
-            .add(budget.copy(userId = userId))
+            .add(budget.copy(userId = uId))
             .await()
         Result.success(Unit)
     } catch (e: Exception) {
