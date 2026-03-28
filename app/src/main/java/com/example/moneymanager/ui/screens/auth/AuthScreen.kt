@@ -10,7 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.with
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -54,7 +54,6 @@ fun AuthScreen(
     val authState by authViewModel.authState.collectAsState()
     var currentTab by remember { mutableStateOf(AuthTab.LOGIN) }
 
-    // Google Sign In Launcher
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
         onResult = {
@@ -63,9 +62,7 @@ fun AuthScreen(
                 try {
                     val account = task.getResult(ApiException::class.java)
                     authViewModel.signInWithGoogleAccount(account)
-                } catch (e: ApiException) {
-                    // Handle error
-                }
+                } catch (e: ApiException) { }
             }
         }
     )
@@ -77,7 +74,7 @@ fun AuthScreen(
     }
 
     Scaffold(
-        containerColor = BackgroundGray // From your Color.kt
+        containerColor = BackgroundGray
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -85,42 +82,30 @@ fun AuthScreen(
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
         ) {
-            // 1. Emerald Header Section
+            // 1. Header Section - No Logo
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(240.dp)
+                    .height(220.dp)
                     .clip(RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp))
-                    .background(MediumGreen) // Emerald Theme
+                    .background(MediumGreen)
             ) {
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(80.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.2f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MonetizationOn,
-                            contentDescription = "Logo",
-                            tint = Color.White,
-                            modifier = Modifier.size(48.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "Money Saver",
-                        fontSize = 28.sp,
+                        text = "BEST Money\nGOOD Keeper",
+                        fontSize = 32.sp,
+                        lineHeight = 36.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = Color.White,
+                        textAlign = TextAlign.Center
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Your journey to financial freedom",
+                        text = "Smart spending for a better future",
                         fontSize = 14.sp,
                         color = Color.White.copy(alpha = 0.85f)
                     )
@@ -129,7 +114,7 @@ fun AuthScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 2. Custom Toggle Tabs
+            // 2. Tab Selector
             AuthTabSelector(
                 selectedTab = currentTab,
                 onTabSelected = { currentTab = it }
@@ -137,22 +122,16 @@ fun AuthScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 3. Form Content with Animation
+            // 3. Form Content
             AnimatedContent(
                 targetState = currentTab,
                 transitionSpec = {
                     if (targetState == AuthTab.REGISTER) {
-                        // Slide Left (Login -> Register)
-                        (slideInHorizontally(animationSpec = tween(300)) { width -> width } +
-                                fadeIn(animationSpec = tween(300))) with
-                                (slideOutHorizontally(animationSpec = tween(300)) { width -> -width } +
-                                        fadeOut(animationSpec = tween(300)))
+                        (slideInHorizontally(animationSpec = tween(300)) { width -> width } + fadeIn(animationSpec = tween(300))).togetherWith(
+                            slideOutHorizontally(animationSpec = tween(300)) { width -> -width } + fadeOut(animationSpec = tween(300)))
                     } else {
-                        // Slide Right (Register -> Login)
-                        (slideInHorizontally(animationSpec = tween(300)) { width -> -width } +
-                                fadeIn(animationSpec = tween(300))) with
-                                (slideOutHorizontally(animationSpec = tween(300)) { width -> width } +
-                                        fadeOut(animationSpec = tween(300)))
+                        (slideInHorizontally(animationSpec = tween(300)) { width -> -width } + fadeIn(animationSpec = tween(300))).togetherWith(
+                            slideOutHorizontally(animationSpec = tween(300)) { width -> width } + fadeOut(animationSpec = tween(300)))
                     }
                 },
                 label = "AuthTransition"
@@ -173,25 +152,8 @@ fun AuthScreen(
                 }
             }
 
-            // Error Message Display
             if (authState is AuthViewModel.AuthState.Error) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Card(
-                    modifier = Modifier
-                        .padding(horizontal = 24.dp)
-                        .fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE))
-                ) {
-                    Text(
-                        text = (authState as AuthViewModel.AuthState.Error).message,
-                        color = Color(0xFFD32F2F),
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth()
-                    )
-                }
+                ErrorMessage((authState as AuthViewModel.AuthState.Error).message)
             }
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -220,13 +182,13 @@ fun AuthTabSelector(
             verticalAlignment = Alignment.CenterVertically
         ) {
             TabButton(
-                text = "Log In",
+                text = "SIGN IN",
                 isSelected = selectedTab == AuthTab.LOGIN,
                 modifier = Modifier.weight(1f),
                 onClick = { onTabSelected(AuthTab.LOGIN) }
             )
             TabButton(
-                text = "Sign Up",
+                text = "SIGN UP",
                 isSelected = selectedTab == AuthTab.REGISTER,
                 modifier = Modifier.weight(1f),
                 onClick = { onTabSelected(AuthTab.REGISTER) }
@@ -308,7 +270,7 @@ fun LoginContent(
         Spacer(modifier = Modifier.height(32.dp))
 
         EmeraldButton(
-            text = "Log In",
+            text = "Sign In",
             isLoading = isLoading,
             onClick = { authViewModel.login(email, password) }
         )
@@ -330,7 +292,6 @@ fun RegisterContent(
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
-    var confirmPasswordVisible by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
 
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
@@ -364,8 +325,7 @@ fun RegisterContent(
             icon = Icons.Default.Lock,
             keyboardType = KeyboardType.Password,
             isPassword = true,
-            passwordVisible = confirmPasswordVisible,
-            onPasswordToggle = { confirmPasswordVisible = !confirmPasswordVisible }
+            passwordVisible = passwordVisible
         )
 
         if (errorText != null) {
@@ -380,7 +340,7 @@ fun RegisterContent(
         Spacer(modifier = Modifier.height(32.dp))
 
         EmeraldButton(
-            text = "Sign Up",
+            text = "Create Account",
             isLoading = isLoading,
             onClick = {
                 if (password == confirmPassword) {
@@ -391,20 +351,8 @@ fun RegisterContent(
                 }
             }
         )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "By signing up, you agree to our Terms & Policy",
-            color = TextGray,
-            fontSize = 12.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
-        )
     }
 }
-
-// --- Reusable Emerald UI Components ---
 
 @Composable
 fun EmeraldTextField(
@@ -487,7 +435,7 @@ fun GoogleButton(onClick: () -> Unit) {
         colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray)
     ) {
-        Text(" Sign in with Google", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+        Text("Continue with Google", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -506,5 +454,25 @@ fun DividerWithText() {
             modifier = Modifier.padding(horizontal = 16.dp)
         )
         HorizontalDivider(modifier = Modifier.weight(1f), color = Color.LightGray)
+    }
+}
+
+@Composable
+fun ErrorMessage(message: String) {
+    Card(
+        modifier = Modifier
+            .padding(horizontal = 24.dp)
+            .fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE))
+    ) {
+        Text(
+            text = message,
+            color = Color(0xFFD32F2F),
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth()
+        )
     }
 }

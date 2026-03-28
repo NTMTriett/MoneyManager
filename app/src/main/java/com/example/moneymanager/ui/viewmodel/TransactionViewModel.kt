@@ -1,37 +1,31 @@
 package com.example.moneymanager.ui.viewmodel
 
-import android.os.Build
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.flow.first
+import android.graphics.Bitmap
 import android.util.Log
-import androidx.annotation.RequiresApi
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.moneymanager.data.model.Transaction
 import com.example.moneymanager.data.repository.CategoryRepository
-import com.example.moneymanager.data.repository.OllamaRepository
-import com.google.gson.Gson
 import com.example.moneymanager.data.repository.TransactionRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
-import com.google.firebase.Timestamp
-import java.time.LocalDate
-import java.time.YearMonth
-import com.example.moneymanager.util.toCurrencyString
+import com.example.moneymanager.data.repository.OllamaRepository
 import com.example.moneymanager.data.model.AiTransactionData
 import com.example.moneymanager.util.PromptUtils
+import com.example.moneymanager.BuildConfig
+import com.google.firebase.Timestamp
+import com.google.gson.Gson
+import com.google.ai.client.generativeai.GenerativeModel
+import com.google.ai.client.generativeai.type.content
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import java.util.Calendar
 import javax.inject.Inject
 
 @HiltViewModel
 class TransactionViewModel @Inject constructor(
     private val transactionRepository: TransactionRepository,
-    private val ollamaRepository: OllamaRepository, // Inject thêm
-    private val categoryRepository: CategoryRepository
+    private val categoryRepository: CategoryRepository,
+    private val ollamaRepository: OllamaRepository
 ) : ViewModel() {
 
     private val _transactionsState = MutableStateFlow<TransactionsState>(TransactionsState.Loading)
@@ -40,120 +34,132 @@ class TransactionViewModel @Inject constructor(
     private val _currentTransaction = MutableStateFlow<Transaction?>(null)
     val currentTransaction: StateFlow<Transaction?> = _currentTransaction.asStateFlow()
 
-    private val _isSelectionMode = MutableStateFlow(false)
-    val isSelectionMode: StateFlow<Boolean> = _isSelectionMode.asStateFlow()
-    private val _selectedTransactionIds = MutableStateFlow<Set<String>>(emptySet())
-    val selectedTransactionIds: StateFlow<Set<String>> = _selectedTransactionIds.asStateFlow()
     private val _quickAddState = MutableStateFlow<QuickAddState>(QuickAddState.Idle)
     val quickAddState: StateFlow<QuickAddState> = _quickAddState.asStateFlow()
 
-    private val gson = Gson()
+    private val _isSelectionMode = MutableStateFlow(false)
+    val isSelectionMode: StateFlow<Boolean> = _isSelectionMode.asStateFlow()
 
-    // --- Search Logic ---
-    private var _cachedTransactions: List<Transaction> = emptyList() // Stores raw data from repo
+    private val _selectedTransactionIds = MutableStateFlow<Set<String>>(emptySet())
+    val selectedTransactionIds: StateFlow<Set<String>> = _selectedTransactionIds.asStateFlow()
+
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
-    fun processQuickAdd(input: String) {
-        if (input.isBlank()) return
 
+    // Trạng thái lưu dữ liệu AI quét được để người dùng xác nhận
+    private val _scannedTransaction = MutableStateFlow<AiTransactionData?>(null)
+    val scannedTransaction: StateFlow<AiTransactionData?> = _scannedTransaction.asStateFlow()
+
+    private var _cachedTransactions: List<Transaction> = emptyList()
+    private val gson = Gson()
+    
+    private val generativeModel = GenerativeModel(
+        modelName = "gemini-2.5-flash",
+        apiKey = BuildConfig.apiKey
+    )
+
+    init {
+        loadAllTransactions()
+    }
+
+    fun loadAllTransactions() {
         viewModelScope.launch {
-            _quickAddState.value = QuickAddState.Loading
-
-            try {
-                // 1. Lấy danh mục để AI map đúng
-                val categories = withTimeoutOrNull(2000) {
-                    categoryRepository.getAllCategories().first()
-                } ?: emptyList<com.example.moneymanager.data.model.Category>()
-                val categoryNames = categories.joinToString(", ") { it.name }
-
-                // 2. Prompt CHUYÊN BIỆT cho việc trích xuất dữ liệu (Extraction Prompt)
-                // Prompt này ngắn gọn, chỉ tập trung vào việc lấy số tiền và loại
-               val prompt = PromptUtils.getQuickAddPrompt(input, categoryNames)
-
-                val result = ollamaRepository.sendMessage(prompt, jsonMode = true)
-
-                result.fold(
-                    onSuccess = { responseText ->
-                        val transaction = parseAndSaveTransaction(responseText, input, categories)
-                        if (transaction != null) {
-                            _quickAddState.value = QuickAddState.Success("Đã thêm: ${transaction.description} (${transaction.amount.toCurrencyString()})")
-                            // Reset state sau 3s để ẩn thông báo
-                            kotlinx.coroutines.delay(3000)
-                            _quickAddState.value = QuickAddState.Idle
-                        } else {
-                            _quickAddState.value = QuickAddState.Error("Không hiểu câu lệnh. Hãy thử: 'Ăn trưa 30k'")
-                        }
-                    },
-                    onFailure = {
-                        _quickAddState.value = QuickAddState.Error("Lỗi kết nối AI: ${it.message}")
-                    }
-                )
-
-            } catch (e: Exception) {
-                _quickAddState.value = QuickAddState.Error("Lỗi: ${e.message}")
-            }
+            _transactionsState.value = TransactionsState.Loading
+            transactionRepository.getAllTransactions()
+                .catch { e -> _transactionsState.value = TransactionsState.Error(e.message ?: "Error") }
+                .collectLatest { transactions ->
+                    _cachedTransactions = transactions
+                    filterTransactions()
+                }
         }
     }
-    private suspend fun parseAndSaveTransaction(
-        jsonResponse: String,
-        originalInput: String,
-        availableCategories: List<com.example.moneymanager.data.model.Category>
-    ): Transaction? {
-        return try {
-            val aiData = gson.fromJson(jsonResponse, AiTransactionData::class.java)
 
-            if (aiData.amount != null && aiData.amount > 0) {
-                val matchedCategory = availableCategories.find {
-                    it.name.equals(aiData.category, ignoreCase = true)
-                } ?: availableCategories.firstOrNull()
-
-                val transaction = Transaction(
-                    amount = aiData.amount,
-                    type = aiData.type ?: "expense",
-                    category = matchedCategory?.name ?: "General",
-                    description = aiData.description ?: originalInput,
-                    date = Timestamp.now(),
-                    month = LocalDate.now().monthValue,
-                    year = LocalDate.now().year
-                )
-
-                addTransaction(transaction) // Gọi hàm add có sẵn
-                transaction
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            Log.e("QuickAdd", "Parse Error", e)
-            null
+    fun loadTransactionsByType(type: String) {
+        viewModelScope.launch {
+            _transactionsState.value = TransactionsState.Loading
+            transactionRepository.getTransactionsByType(type)
+                .catch { e -> _transactionsState.value = TransactionsState.Error(e.message ?: "Error") }
+                .collectLatest { transactions ->
+                    _cachedTransactions = transactions
+                    filterTransactions()
+                }
         }
     }
-    sealed interface QuickAddState {
-        data object Idle : QuickAddState
-        data object Loading : QuickAddState
-        data class Success(val message: String) : QuickAddState
-        data class Error(val message: String) : QuickAddState
+
+    fun loadTransactionsByMonthCompatible(month: Int, year: Int, type: String) {
+        viewModelScope.launch {
+            _transactionsState.value = TransactionsState.Loading
+            transactionRepository.getTransactionsByMonth(month, year)
+                .catch { e -> _transactionsState.value = TransactionsState.Error(e.message ?: "Error") }
+                .collectLatest { transactions ->
+                    _cachedTransactions = if (type == "all") transactions else transactions.filter { it.type == type }
+                    filterTransactions()
+                }
+        }
     }
 
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
-        applySearchFilter()
+        filterTransactions()
     }
 
-    private fun applySearchFilter() {
-        val query = _searchQuery.value
-        if (query.isBlank()) {
-            _transactionsState.value = TransactionsState.Success(_cachedTransactions)
+    private fun filterTransactions() {
+        val query = _searchQuery.value.lowercase()
+        val filtered = if (query.isEmpty()) {
+            _cachedTransactions
         } else {
-            val filtered = _cachedTransactions.filter { transaction ->
-                transaction.category.contains(query, ignoreCase = true) ||
-                        transaction.description.contains(query, ignoreCase = true) ||
-                        transaction.amount.toString().contains(query)
+            _cachedTransactions.filter { 
+                it.category.lowercase().contains(query) || 
+                it.description.lowercase().contains(query) ||
+                it.amount.toString().contains(query)
             }
-            _transactionsState.value = TransactionsState.Success(filtered)
+        }
+        _transactionsState.value = TransactionsState.Success(filtered)
+    }
+
+    fun getTransactionById(transactionId: String) {
+        viewModelScope.launch {
+            transactionRepository.getTransactionById(transactionId).onSuccess {
+                _currentTransaction.value = it
+            }
         }
     }
 
-    // --- Selection Mode ---
+    fun addTransaction(transaction: Transaction) {
+        viewModelScope.launch {
+            transactionRepository.addTransaction(transaction).onSuccess {
+                loadAllTransactions()
+            }
+        }
+    }
+
+    fun updateTransaction(transaction: Transaction) {
+        viewModelScope.launch {
+            transactionRepository.updateTransaction(transaction).onSuccess {
+                loadAllTransactions()
+            }
+        }
+    }
+
+    fun deleteTransaction(transactionId: String) {
+        viewModelScope.launch {
+            transactionRepository.deleteTransaction(transactionId).onSuccess {
+                loadAllTransactions()
+            }
+        }
+    }
+
+    fun deleteSelectedTransactions() {
+        viewModelScope.launch {
+            val idsToDelete = _selectedTransactionIds.value
+            idsToDelete.forEach { id ->
+                transactionRepository.deleteTransaction(id)
+            }
+            _selectedTransactionIds.value = emptySet()
+            _isSelectionMode.value = false
+            loadAllTransactions()
+        }
+    }
 
     fun toggleSelectionMode() {
         _isSelectionMode.value = !_isSelectionMode.value
@@ -163,10 +169,16 @@ class TransactionViewModel @Inject constructor(
     }
 
     fun toggleTransactionSelection(transactionId: String) {
-        _selectedTransactionIds.value = if (_selectedTransactionIds.value.contains(transactionId)) {
-            _selectedTransactionIds.value - transactionId
+        val currentSelected = _selectedTransactionIds.value.toMutableSet()
+        if (currentSelected.contains(transactionId)) {
+            currentSelected.remove(transactionId)
         } else {
-            _selectedTransactionIds.value + transactionId
+            currentSelected.add(transactionId)
+        }
+        _selectedTransactionIds.value = currentSelected
+        if (currentSelected.isEmpty() && _isSelectionMode.value) {
+            // Optional: exit selection mode if nothing is selected? 
+            // Usually we keep it until explicitly closed.
         }
     }
 
@@ -178,149 +190,96 @@ class TransactionViewModel @Inject constructor(
         _selectedTransactionIds.value = emptySet()
     }
 
-    fun deleteSelectedTransactions() {
+    fun scanBill(bitmap: Bitmap) {
         viewModelScope.launch {
-            val idsToDelete = _selectedTransactionIds.value.toList()
-            var successCount = 0
-            var failCount = 0
+            _quickAddState.value = QuickAddState.Loading
+            val prompt = """
+            Analyze this receipt image and extract:
+            1. amount (number)
+            2. type (always 'expense')
+            3. category (choose best from: Food, Transport, Shopping, Bills, Others)
+            4. description (short summary of what was bought)
+            Return ONLY a valid JSON object.
+        """.trimIndent()
 
-            idsToDelete.forEach { id ->
-                transactionRepository.deleteTransaction(id).fold(
-                    onSuccess = { successCount++ },
-                    onFailure = { failCount++ }
-                )
+            try {
+                val response = generativeModel.generateContent(content {
+                    image(bitmap)
+                    text(prompt)
+                })
+
+                val rawText = response.text ?: ""
+                // Lấy chính xác phần text nằm trong dấu { } để loại bỏ Markdown hay text dư thừa
+                val startIndex = rawText.indexOf("{")
+                val endIndex = rawText.lastIndexOf("}")
+
+                if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
+                    val cleanJson = rawText.substring(startIndex, endIndex + 1)
+                    val aiData = gson.fromJson(cleanJson, AiTransactionData::class.java)
+
+                    _scannedTransaction.value = aiData
+                    _quickAddState.value = QuickAddState.Idle
+                } else {
+                    _quickAddState.value = QuickAddState.Error("AI returned invalid format. Please try again.")
+                }
+
+            } catch (e: Exception) {
+                Log.e("ScanBill", "Error: ${e.message}")
+                _quickAddState.value = QuickAddState.Error("AI Scan failed: ${e.message}")
             }
-            _isSelectionMode.value = false
-            _selectedTransactionIds.value = emptySet()
-            if (failCount > 0 ){
-                Log.e("TransactionViewModel", "Failed to delete $failCount transactions")
-            }
         }
     }
 
-    init {
-        loadAllTransactions()
+    fun clearScannedTransaction() {
+        _scannedTransaction.value = null
     }
 
-    // --- Data Loading (Updated to use cache) ---
-
-    fun loadAllTransactions() {
+    fun confirmAndSaveTransaction(amount: Double, category: String, description: String) {
         viewModelScope.launch {
-            _transactionsState.value = TransactionsState.Loading
-            transactionRepository.getAllTransactions()
-                .catch { e ->
-                    _transactionsState.value = TransactionsState.Error(e.message ?: "Failed to load transactions")
-                }
-                .collectLatest { transactions ->
-                    _cachedTransactions = transactions
-                    applySearchFilter()
-                }
-        }
-    }
-
-    fun loadTransactionsByType(type: String) {
-        viewModelScope.launch {
-            _transactionsState.value = TransactionsState.Loading
-            transactionRepository.getTransactionsByType(type)
-                .catch { e ->
-                    Log.e("TransactionViewModel", "Error loading by type: ${e.message}", e)
-                    _transactionsState.value = TransactionsState.Error(e.message ?: "Failed to load transactions by type")
-                }
-                .collectLatest { transactions ->
-                    _cachedTransactions = transactions
-                    applySearchFilter()
-                }
-        }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.O)
-    fun loadTransactionsByMonth(yearMonth: YearMonth) {
-        viewModelScope.launch {
-            _transactionsState.value = TransactionsState.Loading
-            transactionRepository.getTransactionsByMonth(yearMonth.monthValue, yearMonth.year)
-                .catch { e ->
-                    Log.e("TransactionViewModel", "Error loading by month: ${e.message}", e)
-                    _transactionsState.value = TransactionsState.Error(e.message ?: "Failed to load transactions by month")
-                }
-                .collectLatest { transactions ->
-                    _cachedTransactions = transactions
-                    applySearchFilter()
-                }
-        }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.O)
-    fun loadTransactionsByTypeAndMonth(type: String, yearMonth: YearMonth) {
-        viewModelScope.launch {
-            _transactionsState.value = TransactionsState.Loading
-            transactionRepository.getTransactionsByTypeAndMonth(type, yearMonth)
-                .catch { e ->
-                    Log.e("TransactionViewModel", "Error loading by type and month: ${e.message}", e)
-                    _transactionsState.value = TransactionsState.Error(e.message ?: "Failed to load filtered transactions")
-                }
-                .collectLatest { transactions ->
-                    _cachedTransactions = transactions
-                    applySearchFilter()
-                }
-        }
-    }
-
-    fun loadRecentTransactions(limit: Int = 5) {
-        viewModelScope.launch {
-            _transactionsState.value = TransactionsState.Loading
-            transactionRepository.getRecentTransactions(limit)
-                .catch { e ->
-                    _transactionsState.value = TransactionsState.Error(e.message ?: "Failed to load transactions")
-                }
-                .collectLatest { transactions ->
-                    _cachedTransactions = transactions
-                    applySearchFilter()
-                }
-        }
-    }
-
-    // --- CRUD Operations ---
-
-    fun getTransactionById(id: String) {
-        viewModelScope.launch {
-            transactionRepository.getTransactionById(id).fold(
-                onSuccess = { transaction -> _currentTransaction.value = transaction },
-                onFailure = { /* Handle error */ }
+            val calendar = Calendar.getInstance()
+            val transaction = Transaction(
+                amount = amount,
+                type = "expense",
+                category = category,
+                description = description,
+                date = Timestamp.now(),
+                month = calendar.get(Calendar.MONTH) + 1,
+                year = calendar.get(Calendar.YEAR)
             )
+            transactionRepository.addTransaction(transaction).onSuccess { 
+                _quickAddState.value = QuickAddState.Success("Transaction saved!")
+                _scannedTransaction.value = null
+                loadAllTransactions() 
+            }
         }
     }
 
-    fun addTransaction(transaction: Transaction) {
+    fun processQuickAdd(input: String) {
+        if (input.isBlank()) return
         viewModelScope.launch {
-            _transactionsState.value = TransactionsState.Loading
-            transactionRepository.addTransaction(transaction)
-                .fold(
-                    onSuccess = { loadAllTransactions() },
-                    onFailure = { error ->
-                        _transactionsState.value = TransactionsState.Error(error.message ?: "Failed to add transaction")
-                    }
+            _quickAddState.value = QuickAddState.Loading
+            try {
+                val result = ollamaRepository.sendMessage(input, modelName = "qwen2.5:3b", jsonMode = true)
+                result.fold(
+                    onSuccess = { jsonResponse ->
+                        val cleanJson = jsonResponse.substringAfter("{").substringBeforeLast("}").let { "{ $it }" }
+                        val aiData = gson.fromJson(cleanJson, AiTransactionData::class.java)
+                        _scannedTransaction.value = aiData
+                        _quickAddState.value = QuickAddState.Idle
+                    },
+                    onFailure = { _quickAddState.value = QuickAddState.Error("Ollama error") }
                 )
+            } catch (e: Exception) {
+                _quickAddState.value = QuickAddState.Error(e.message ?: "Error")
+            }
         }
     }
 
-    fun updateTransaction(transaction: Transaction) {
-        viewModelScope.launch {
-            transactionRepository.updateTransaction(transaction)
-                .fold(
-                    onSuccess = { loadAllTransactions() },
-                    onFailure = { /* Handle error */ }
-                )
-        }
-    }
-
-    fun deleteTransaction(transactionId: String) {
-        viewModelScope.launch {
-            transactionRepository.deleteTransaction(transactionId)
-                .fold(
-                    onSuccess = { loadAllTransactions() },
-                    onFailure = { /* Handle error */ }
-                )
-        }
+    sealed interface QuickAddState {
+        data object Idle : QuickAddState
+        data object Loading : QuickAddState
+        data class Success(val message: String) : QuickAddState
+        data class Error(val message: String) : QuickAddState
     }
 
     sealed class TransactionsState {

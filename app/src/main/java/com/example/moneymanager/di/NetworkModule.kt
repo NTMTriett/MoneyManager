@@ -17,33 +17,23 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    // Dùng 10.0.2.2 cho Emulator
     private const val BASE_URL = "http://10.0.2.2:11434/"
 
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
-        // 1. Tạo bộ ghi log để xem request/response trong Logcat
         val loggingInterceptor = HttpLoggingInterceptor { message ->
-            // Vẫn giữ logic lọc của bạn nếu muốn
-            if (message.startsWith("-->") || message.startsWith("<--") || message.contains("FAILED")) {
-                Log.d("API_LOG", message)
-            }
+            Log.d("OLLAMA_API", message)
         }.apply {
-            level = if (com.example.moneymanager.BuildConfig.DEBUG) {
-                HttpLoggingInterceptor.Level.BODY
-            } else {
-                HttpLoggingInterceptor.Level.NONE
-            }
+            level = HttpLoggingInterceptor.Level.BODY
         }
 
         return OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
-            // 2. QUAN TRỌNG: Đặt thời gian timeout.
-            // Nếu không kết nối được sau 10s, nó sẽ tự hủy và báo lỗi.
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS) // Thời gian chờ AI trả lời
-            .writeTimeout(10, TimeUnit.SECONDS)
+            // TĂNG TIMEOUT LÊN 120 GIÂY ĐỂ ĐỢI AI PHẢN HỒI (CHO CÁC MÁY CẤU HÌNH YẾU)
+            .connectTimeout(120, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS) 
+            .writeTimeout(120, TimeUnit.SECONDS)
             .build()
     }
 
@@ -52,7 +42,7 @@ object NetworkModule {
     fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
         return Retrofit.Builder()
             .baseUrl(BASE_URL)
-            .client(okHttpClient) // Sử dụng OkHttpClient đã cấu hình ở trên
+            .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
     }
