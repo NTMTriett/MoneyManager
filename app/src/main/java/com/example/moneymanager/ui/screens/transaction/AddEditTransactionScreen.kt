@@ -56,10 +56,10 @@ fun AddEditTransactionScreen(
     var selectedDate by remember { mutableStateOf(Calendar.getInstance().time) }
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
 
-    // Data Observables
-    val categoriesState by categoryViewModel.categoriesState.collectAsState()
-    val transaction by transactionViewModel.currentTransaction.collectAsState()
-    val transactionsState by transactionViewModel.transactionsState.collectAsState()
+    // Data Observables - Explicit initial values to fix type inference
+    val categoriesState by categoryViewModel.categoriesState.collectAsState(initial = CategoryViewModel.CategoriesState.Loading)
+    val transaction by transactionViewModel.currentTransaction.collectAsState(initial = null)
+    val transactionsState by transactionViewModel.transactionsState.collectAsState(initial = TransactionViewModel.TransactionsState.Loading)
 
     // Date Helpers
     val calendar = Calendar.getInstance().apply { time = selectedDate }
@@ -295,19 +295,16 @@ fun AddEditTransactionScreen(
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = primaryColor
-                    ),
-                    enabled = amount.toDoubleOrNull() != null && (amount.toDoubleOrNull() ?: 0.0) > 0
+                    )
                 ) {
-                    if (transactionsState is TransactionViewModel.TransactionsState.Loading) {
-                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                    } else {
-                        Text(
-                            text = if (transactionId == null) "Save Transaction" else "Update Transaction",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    Text(
+                        if (transactionId == null) "Save Transaction" else "Update Transaction",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
+
+                Spacer(modifier = Modifier.height(32.dp))
             }
         }
     }
@@ -324,61 +321,45 @@ fun TransactionTypeSwitcher(
             .padding(horizontal = 24.dp)
             .height(50.dp)
             .clip(RoundedCornerShape(25.dp))
-            .background(Color.White),
+            .background(Color.White.copy(alpha = 0.5f)),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Income Tab (Green)
-        TypeTab(
-            text = "Income",
-            isSelected = currentType == "income",
-            selectedColor = MediumGreen, // Emerald
-            modifier = Modifier.weight(1f),
-            onClick = { onTypeSelected("income") }
-        )
+        val incomeSelected = currentType == "income"
+        val expenseSelected = currentType == "expense"
 
-        // Expense Tab (Red)
-        TypeTab(
-            text = "Expense",
-            isSelected = currentType == "expense",
-            selectedColor = Color(0xFFD32F2F), // Ruby Red
-            modifier = Modifier.weight(1f),
-            onClick = { onTypeSelected("expense") }
-        )
-    }
-}
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .padding(4.dp)
+                .clip(RoundedCornerShape(21.dp))
+                .background(if (expenseSelected) Color(0xFFD32F2F) else Color.Transparent)
+                .clickable { onTypeSelected("expense") },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "Expense",
+                color = if (expenseSelected) Color.White else TextGray,
+                fontWeight = if (expenseSelected) FontWeight.Bold else FontWeight.Normal
+            )
+        }
 
-@Composable
-fun TypeTab(
-    text: String,
-    isSelected: Boolean,
-    selectedColor: Color,
-    modifier: Modifier,
-    onClick: () -> Unit
-) {
-    val backgroundColor by animateColorAsState(
-        targetValue = if (isSelected) selectedColor else Color.Transparent,
-        animationSpec = tween(300), label = "bg"
-    )
-    val textColor by animateColorAsState(
-        targetValue = if (isSelected) Color.White else TextGray,
-        animationSpec = tween(300), label = "text"
-    )
-
-    Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .padding(4.dp)
-            .clip(RoundedCornerShape(25.dp))
-            .background(backgroundColor)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            color = textColor,
-            fontWeight = FontWeight.Bold,
-            fontSize = 16.sp
-        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .padding(4.dp)
+                .clip(RoundedCornerShape(21.dp))
+                .background(if (incomeSelected) MediumGreen else Color.Transparent)
+                .clickable { onTypeSelected("income") },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "Income",
+                color = if (incomeSelected) Color.White else TextGray,
+                fontWeight = if (incomeSelected) FontWeight.Bold else FontWeight.Normal
+            )
+        }
     }
 }
 
@@ -390,29 +371,36 @@ fun ClickableTextField(
     primaryColor: Color,
     onClick: () -> Unit
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = {},
-        label = { Text(label) },
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
-        shape = RoundedCornerShape(16.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = primaryColor,
-            unfocusedBorderColor = Color.LightGray,
-            focusedContainerColor = Color.White,
-            unfocusedContainerColor = Color.White,
-            disabledContainerColor = Color.White,
-            disabledBorderColor = Color.LightGray,
-            disabledTextColor = Color.Black,
-            disabledLabelColor = Color.Gray,
-            disabledLeadingIconColor = primaryColor
-        ),
-        leadingIcon = {
-            Icon(icon, contentDescription = null, tint = primaryColor)
-        },
-        enabled = false, // Disable typing, handle click on Modifier
-        readOnly = true
-    )
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = TextGray,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+        )
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .clickable { onClick() },
+            shape = RoundedCornerShape(16.dp),
+            color = Color.White,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(icon, contentDescription = null, tint = primaryColor)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = TextPrimary
+                )
+            }
+        }
+    }
 }
+
+private val TextPrimary = Color(0xFF212121)

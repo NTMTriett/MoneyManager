@@ -8,14 +8,10 @@ import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.launch
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,19 +26,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.moneymanager.data.model.Transaction
 import com.example.moneymanager.ui.theme.*
@@ -71,9 +64,9 @@ fun DashboardScreen(
     val currentUser by authViewModel.currentUser.collectAsState(initial = null)
     val transactionsState by transactionViewModel.transactionsState.collectAsState()
     val quickAddState by transactionViewModel.quickAddState.collectAsState()
-    var quickAddText by remember { mutableStateOf("") }
-    val snackbarHostState = remember { SnackbarHostState() }
+    val scannedData by transactionViewModel.scannedTransaction.collectAsState()
     
+    var quickAddText by remember { mutableStateOf("") }
     var isBalanceVisible by remember { mutableStateOf(true) }
     var showScanDialog by remember { mutableStateOf(false) }
 
@@ -107,7 +100,6 @@ fun DashboardScreen(
 
     Scaffold(
         containerColor = Color.White,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onNavigateToChat,
@@ -120,12 +112,7 @@ fun DashboardScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(paddingValues)
         ) {
-            // 1. Header Section (Hello!)
-            item {
-                NewDashboardHeader(user = currentUser, onProfileClick = onNavigateToProfile)
-            }
-
-            // 2. TOTAL BALANCE CARD (TOP - Floating over header)
+            item { NewDashboardHeader(user = currentUser, onProfileClick = onNavigateToProfile) }
             item {
                 TotalBalanceCard(
                     transactionsState = transactionsState,
@@ -134,8 +121,6 @@ fun DashboardScreen(
                     onDetailClick = onNavigateToStatistics
                 )
             }
-
-            // 3. AI QUICK ADD INPUT (Directly below Balance)
             item {
                 DashboardQuickAdd(
                     text = quickAddText,
@@ -146,8 +131,6 @@ fun DashboardScreen(
                     }
                 )
             }
-
-            // 4. ACTION GRID (4 Columns like bank apps)
             item {
                 QuickActionsGrid(
                     onScanClick = { showScanDialog = true },
@@ -157,16 +140,7 @@ fun DashboardScreen(
                     onCategoryClick = onNavigateToCategories
                 )
             }
-
-            // 5. PROMO / JUST FOR YOU
-            item {
-                JustForYouSection(onChatClick = onNavigateToChat)
-            }
-
-            // 6. RECENT TRANSACTIONS
-            item {
-                RecentHeader(onSeeAllClick = onNavigateToTransactions)
-            }
+            item { RecentHeader(onSeeAllClick = onNavigateToTransactions) }
 
             when (val state = transactionsState) {
                 is TransactionViewModel.TransactionsState.Success -> {
@@ -176,17 +150,63 @@ fun DashboardScreen(
                 }
                 else -> {}
             }
-
             item { Spacer(modifier = Modifier.height(100.dp)) }
         }
     }
 
-    // Scan Choice Dialog
+    // --- MÀN HÌNH CHỜ XỬ LÝ ẢNH (WAITING SCREEN) ---
+    if (quickAddState is TransactionViewModel.QuickAddState.Loading) {
+        Dialog(onDismissRequest = {}) {
+            Card(
+                modifier = Modifier.size(200.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(color = MediumGreen)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "AI is processing your bill...",
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Please wait a moment",
+                        fontSize = 12.sp,
+                        color = TextGray
+                    )
+                }
+            }
+        }
+    }
+
+    // --- THÔNG BÁO LỖI KHI SCAN THẤT BẠI ---
+    if (quickAddState is TransactionViewModel.QuickAddState.Error) {
+        AlertDialog(
+            onDismissRequest = { transactionViewModel.clearScannedTransaction() },
+            title = { Text("Scan Failed", color = Color.Red, fontWeight = FontWeight.Bold) },
+            text = { Text((quickAddState as TransactionViewModel.QuickAddState.Error).message) },
+            confirmButton = {
+                Button(
+                    onClick = { transactionViewModel.clearScannedTransaction() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MediumGreen)
+                ) { Text("OK") }
+            }
+        )
+    }
+
+    // --- DIALOG CHỌN NGUỒN ẢNH ---
     if (showScanDialog) {
         AlertDialog(
             onDismissRequest = { showScanDialog = false },
             title = { Text("Scan Bill", fontWeight = FontWeight.Bold) },
-            text = { Text("Choose how you want to provide the bill photo.") },
+            text = { Text("Choose a method to scan your receipt.") },
             confirmButton = {
                 Button(onClick = { cameraLauncher.launch(); showScanDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = MediumGreen)) {
                     Text("Take Photo")
@@ -195,6 +215,74 @@ fun DashboardScreen(
             dismissButton = {
                 OutlinedButton(onClick = { galleryLauncher.launch("image/*"); showScanDialog = false }) {
                     Text("Gallery", color = MediumGreen)
+                }
+            }
+        )
+    }
+
+    // --- DIALOG XÁC NHẬN KẾT QUẢ AI QUÉT ---
+    scannedData?.let { data ->
+        var editAmount by remember { mutableStateOf(data.amount?.toString() ?: "0") }
+        var editCategory by remember { mutableStateOf(data.category ?: "Food") }
+        var editDesc by remember { mutableStateOf(data.description ?: "") }
+
+        AlertDialog(
+            onDismissRequest = { transactionViewModel.clearScannedTransaction() },
+            title = { Text("Confirm AI Result", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Hiển thị mục Expense rõ ràng
+                    Surface(
+                        color = Color(0xFFFFEBEE),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.ArrowDownward, null, tint = Color.Red, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Transaction Type: Expense", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
+                    
+                    OutlinedTextField(
+                        value = editAmount,
+                        onValueChange = { editAmount = it },
+                        label = { Text("Amount") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = editCategory,
+                        onValueChange = { editCategory = it },
+                        label = { Text("Category") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = editDesc,
+                        onValueChange = { editDesc = it },
+                        label = { Text("Description") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        transactionViewModel.confirmAndSaveTransaction(
+                            amount = editAmount.toDoubleOrNull() ?: 0.0,
+                            category = editCategory,
+                            description = editDesc
+                        )
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MediumGreen)
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { transactionViewModel.clearScannedTransaction() }) {
+                    Text("Cancel", color = Color.Red)
                 }
             }
         )
@@ -336,27 +424,6 @@ fun ActionIcon(label: String, icon: ImageVector, color: Color, onClick: () -> Un
 }
 
 @Composable
-fun JustForYouSection(onChatClick: () -> Unit) {
-    Column(modifier = Modifier.padding(vertical = 16.dp)) {
-        Text("Just for you", fontWeight = FontWeight.Black, fontSize = 18.sp, modifier = Modifier.padding(horizontal = 24.dp))
-        LazyRow(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            item { PromoItem("AI Advisor", "Get financial tips from AI", Color(0xFFE3F2FD), onChatClick) }
-            item { PromoItem("Investment", "Start growing your wealth", Color(0xFFF1F8E9), {}) }
-        }
-    }
-}
-
-@Composable
-fun PromoItem(title: String, desc: String, bg: Color, onClick: () -> Unit) {
-    Card(modifier = Modifier.size(width = 220.dp, height = 90.dp).clickable { onClick() }, shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = bg)) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(title, fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 14.sp)
-            Text(desc, fontSize = 11.sp, color = TextGray)
-        }
-    }
-}
-
-@Composable
 fun RecentHeader(onSeeAllClick: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text("Recent Transactions", fontWeight = FontWeight.Black, fontSize = 18.sp)
@@ -380,14 +447,5 @@ fun TransactionItemUI(transaction: Transaction, onClick: (String) -> Unit) {
             (if (transaction.type == "income") "+" else "-") + NumberFormat.getCurrencyInstance().format(transaction.amount),
             fontWeight = FontWeight.Black, color = if (transaction.type == "income") Color(0xFF4CAF50) else Color(0xFFF44336)
         )
-    }
-}
-
-@Composable
-fun EmptyStateCard(onAddClick: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().padding(40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.AutoMirrored.Filled.ReceiptLong, null, tint = Color.LightGray, modifier = Modifier.size(64.dp))
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onAddClick, colors = ButtonDefaults.buttonColors(containerColor = MediumGreen)) { Text("Add Transaction") }
     }
 }

@@ -109,7 +109,7 @@ dependencies {
     // Icons
     implementation("androidx.compose.material:material-icons-extended")
     // Thêm SDK của Google AI (Gemini)
-    implementation("com.google.ai.client.generativeai:generativeai:0.7.0")
+    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
     // Image Loading
     implementation(libs.coil.compose)

@@ -27,12 +27,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.moneymanager.data.model.Transaction
 import com.example.moneymanager.ui.theme.MediumGreen
 import com.example.moneymanager.ui.theme.TextGray
-import com.example.moneymanager.ui.theme.TextPrimary
 import com.example.moneymanager.ui.viewmodel.TransactionViewModel
 import java.text.NumberFormat
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,11 +39,10 @@ fun TransactionsScreen(
     onTransactionClick: (String) -> Unit,
     transactionViewModel: TransactionViewModel = hiltViewModel()
 ) {
-    val transactionsState by transactionViewModel.transactionsState.collectAsState()
-    val isSelectionMode by transactionViewModel.isSelectionMode.collectAsState()
-    val selectedTransactionIds by transactionViewModel.selectedTransactionIds.collectAsState()
-    val searchQuery by transactionViewModel.searchQuery.collectAsState()
-    val snackbarHostState = remember { SnackbarHostState() }
+    val transactionsState by transactionViewModel.transactionsState.collectAsState(initial = TransactionViewModel.TransactionsState.Loading)
+    val isSelectionMode by transactionViewModel.isSelectionMode.collectAsState(initial = false)
+    val selectedTransactionIds by transactionViewModel.selectedTransactionIds.collectAsState(initial = emptySet())
+    val searchQuery by transactionViewModel.searchQuery.collectAsState(initial = "")
 
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
@@ -63,7 +59,6 @@ fun TransactionsScreen(
         transactionViewModel.loadAllTransactions()
     }
 
-    // Fixed: Sử dụng Calendar thay cho YearMonth để hỗ trợ API 24
     LaunchedEffect(selectedTypeFilter, selectedMonthFilter) {
         val monthIndex = months.indexOf(selectedMonthFilter)
         if (selectedMonthFilter == "All Time") {
@@ -71,7 +66,6 @@ fun TransactionsScreen(
             else transactionViewModel.loadTransactionsByType(selectedTypeFilter)
         } else {
             val calendar = Calendar.getInstance()
-            // Truyền tham số tháng và năm thủ công vào ViewModel
             transactionViewModel.loadTransactionsByMonthCompatible(monthIndex, calendar.get(Calendar.YEAR), selectedTypeFilter)
         }
     }
@@ -197,7 +191,7 @@ fun TransactionsScreen(
 fun EmptyStateView(isSearchActive: Boolean) {
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(if (isSearchActive) Icons.Default.SearchOff else Icons.Default.ReceiptLong, null, tint = Color.LightGray, modifier = Modifier.size(64.dp))
+            Icon(if (isSearchActive) Icons.Default.SearchOff else Icons.Default.Receipt, null, tint = Color.LightGray, modifier = Modifier.size(64.dp))
             Spacer(modifier = Modifier.height(16.dp))
             Text(if (isSearchActive) "No results found" else "No transactions yet", color = TextGray)
         }
