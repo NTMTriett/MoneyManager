@@ -55,6 +55,9 @@ fun DashboardScreen(
     onNavigateToProfile: () -> Unit,
     onNavigateToBudgets: () -> Unit,
     onNavigateToChat: () -> Unit,
+    onNavigateToSavings: () -> Unit,
+    onNavigateToRecurring: () -> Unit,
+    onNavigateToDebtLoans: () -> Unit,
     onTransactionClick: (String) -> Unit,
     authViewModel: AuthViewModel = hiltViewModel(),
     transactionViewModel: TransactionViewModel = hiltViewModel(),
@@ -137,7 +140,10 @@ fun DashboardScreen(
                     onAddClick = onNavigateToAddTransaction,
                     onHistoryClick = onNavigateToTransactions,
                     onBudgetClick = onNavigateToBudgets,
-                    onCategoryClick = onNavigateToCategories
+                    onCategoryClick = onNavigateToCategories,
+                    onSavingsClick = onNavigateToSavings,
+                    onRecurringClick = onNavigateToRecurring,
+                    onDebtLoanClick = onNavigateToDebtLoans
                 )
             }
             item { RecentHeader(onSeeAllClick = onNavigateToTransactions) }
@@ -394,7 +400,16 @@ fun DashboardQuickAdd(text: String, onTextChanged: (String) -> Unit, isLoading: 
 }
 
 @Composable
-fun QuickActionsGrid(onScanClick: () -> Unit, onAddClick: () -> Unit, onHistoryClick: () -> Unit, onBudgetClick: () -> Unit, onCategoryClick: () -> Unit) {
+fun QuickActionsGrid(
+    onScanClick: () -> Unit,
+    onAddClick: () -> Unit,
+    onHistoryClick: () -> Unit,
+    onBudgetClick: () -> Unit,
+    onCategoryClick: () -> Unit,
+    onSavingsClick: () -> Unit,
+    onRecurringClick: () -> Unit,
+    onDebtLoanClick: () -> Unit
+) {
     Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             ActionIcon("Scan", Icons.Default.DocumentScanner, Color(0xFF1A73E8), onScanClick)
@@ -404,10 +419,10 @@ fun QuickActionsGrid(onScanClick: () -> Unit, onAddClick: () -> Unit, onHistoryC
         }
         Spacer(Modifier.height(20.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            ActionIcon("Savings", Icons.Default.AccountBalanceWallet, Color(0xFF43A047), onSavingsClick)
+            ActionIcon("Recurring", Icons.Default.Repeat, Color(0xFF0288D1), onRecurringClick)
+            ActionIcon("Debt/Loan", Icons.Default.MoneyOff, Color(0xFFE64A19), onDebtLoanClick)
             ActionIcon("Category", Icons.Default.GridView, Color(0xFF00BFA5), onCategoryClick)
-            ActionIcon("Savings", Icons.Default.AccountBalanceWallet, Color(0xFF43A047), {})
-            ActionIcon("Bank", Icons.Default.AccountBalance, Color(0xFF0288D1), {})
-            ActionIcon("All", Icons.Default.Apps, Color(0xFF757575), {})
         }
     }
 }

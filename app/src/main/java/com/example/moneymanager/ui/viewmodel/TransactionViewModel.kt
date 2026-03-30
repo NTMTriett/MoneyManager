@@ -54,7 +54,7 @@ class TransactionViewModel @Inject constructor(
     private val gson = Gson()
     
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-2.5-flash",
+        modelName = "gemini-1.5-flash",
         apiKey = BuildConfig.apiKey
     )
 
@@ -66,7 +66,10 @@ class TransactionViewModel @Inject constructor(
         viewModelScope.launch {
             _transactionsState.value = TransactionsState.Loading
             transactionRepository.getAllTransactions()
-                .catch { e -> _transactionsState.value = TransactionsState.Error(e.message ?: "Error") }
+                .catch { e -> 
+                    Log.e("TransactionVM", "Error loading: ${e.message}")
+                    _transactionsState.value = TransactionsState.Error(e.message ?: "Error") 
+                }
                 .collectLatest { transactions ->
                     _cachedTransactions = transactions
                     filterTransactions()
@@ -176,10 +179,6 @@ class TransactionViewModel @Inject constructor(
             currentSelected.add(transactionId)
         }
         _selectedTransactionIds.value = currentSelected
-        if (currentSelected.isEmpty() && _isSelectionMode.value) {
-            // Optional: exit selection mode if nothing is selected? 
-            // Usually we keep it until explicitly closed.
-        }
     }
 
     fun selectAllTransaction(transactions: List<Transaction>) {
@@ -209,7 +208,6 @@ class TransactionViewModel @Inject constructor(
                 })
 
                 val rawText = response.text ?: ""
-                // Lấy chính xác phần text nằm trong dấu { } để loại bỏ Markdown hay text dư thừa
                 val startIndex = rawText.indexOf("{")
                 val endIndex = rawText.lastIndexOf("}")
 
