@@ -54,7 +54,7 @@ class TransactionViewModel @Inject constructor(
     private val gson = Gson()
     
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-1.5-flash",
+        modelName = "gemini-2.5-flash",
         apiKey = BuildConfig.apiKey
     )
 
@@ -230,14 +230,15 @@ class TransactionViewModel @Inject constructor(
 
     fun clearScannedTransaction() {
         _scannedTransaction.value = null
+        _quickAddState.value = QuickAddState.Idle
     }
 
-    fun confirmAndSaveTransaction(amount: Double, category: String, description: String) {
+    fun confirmAndSaveTransaction(amount: Double, type: String, category: String, description: String) {
         viewModelScope.launch {
             val calendar = Calendar.getInstance()
             val transaction = Transaction(
                 amount = amount,
-                type = "expense",
+                type = type.lowercase(),
                 category = category,
                 description = description,
                 date = Timestamp.now(),
@@ -257,15 +258,30 @@ class TransactionViewModel @Inject constructor(
         viewModelScope.launch {
             _quickAddState.value = QuickAddState.Loading
             try {
-                val result = ollamaRepository.sendMessage(input, modelName = "qwen2.5:3b", jsonMode = true)
+                // 1. Lấy danh sách category hiện có
+                val categories = categoryRepository.getAllCategories().firstOrNull()?.joinToString { it.name } ?: ""
+                
+                // 2. Sử dụng PromptUtils để AI hiểu "100k", "lunch"...
+                val prompt = PromptUtils.getQuickAddPrompt(input, categories)
+                
+                // 3. Gửi cho Ollama
+                val result = ollamaRepository.sendMessage(prompt, modelName = "qwen2.5:3b", jsonMode = true)
+                
                 result.fold(
                     onSuccess = { jsonResponse ->
-                        val cleanJson = jsonResponse.substringAfter("{").substringBeforeLast("}").let { "{ $it }" }
-                        val aiData = gson.fromJson(cleanJson, AiTransactionData::class.java)
-                        _scannedTransaction.value = aiData
-                        _quickAddState.value = QuickAddState.Idle
+                        val startIndex = jsonResponse.indexOf("{")
+                        val endIndex = jsonResponse.lastIndexOf("}")
+                        
+                        if (startIndex != -1 && endIndex != -1) {
+                            val cleanJson = jsonResponse.substring(startIndex, endIndex + 1)
+                            val aiData = gson.fromJson(cleanJson, AiTransactionData::class.java)
+                            _scannedTransaction.value = aiData
+                            _quickAddState.value = QuickAddState.Idle
+                        } else {
+                            _quickAddState.value = QuickAddState.Error("AI returned invalid format")
+                        }
                     },
-                    onFailure = { _quickAddState.value = QuickAddState.Error("Ollama error") }
+                    onFailure = { _quickAddState.value = QuickAddState.Error("Ollama error: ${it.message}") }
                 )
             } catch (e: Exception) {
                 _quickAddState.value = QuickAddState.Error(e.message ?: "Error")

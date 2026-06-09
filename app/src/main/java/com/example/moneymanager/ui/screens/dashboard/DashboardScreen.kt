@@ -231,25 +231,38 @@ fun DashboardScreen(
         var editAmount by remember { mutableStateOf(data.amount?.toString() ?: "0") }
         var editCategory by remember { mutableStateOf(data.category ?: "Food") }
         var editDesc by remember { mutableStateOf(data.description ?: "") }
+        var editType by remember { mutableStateOf(data.type ?: "expense") }
 
         AlertDialog(
             onDismissRequest = { transactionViewModel.clearScannedTransaction() },
             title = { Text("Confirm AI Result", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Hiển thị mục Expense rõ ràng
+                    val isIncome = editType.lowercase() == "income"
                     Surface(
-                        color = Color(0xFFFFEBEE),
+                        color = if (isIncome) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().clickable { 
+                            editType = if (isIncome) "expense" else "income" 
+                        }
                     ) {
                         Row(
                             modifier = Modifier.padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.ArrowDownward, null, tint = Color.Red, modifier = Modifier.size(16.dp))
+                            Icon(
+                                imageVector = if (isIncome) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, 
+                                contentDescription = null, 
+                                tint = if (isIncome) Color(0xFF2E7D32) else Color.Red, 
+                                modifier = Modifier.size(16.dp)
+                            )
                             Spacer(Modifier.width(8.dp))
-                            Text("Transaction Type: Expense", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(
+                                text = "Type: ${editType.replaceFirstChar { it.uppercase() }} (Tap to change)", 
+                                color = if (isIncome) Color(0xFF2E7D32) else Color.Red, 
+                                fontWeight = FontWeight.Bold, 
+                                fontSize = 14.sp
+                            )
                         }
                     }
                     
@@ -279,11 +292,12 @@ fun DashboardScreen(
                     onClick = {
                         transactionViewModel.confirmAndSaveTransaction(
                             amount = editAmount.toDoubleOrNull() ?: 0.0,
+                            type = editType,
                             category = editCategory,
                             description = editDesc
                         )
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = MediumGreen)
+                    colors = ButtonDefaults.buttonColors(containerColor = if (editType == "income") Color(0xFF2E7D32) else MediumGreen)
                 ) { Text("Save") }
             },
             dismissButton = {
