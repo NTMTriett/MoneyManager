@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import com.example.moneymanager.data.model.Transaction
 import com.example.moneymanager.ui.theme.*
 import com.example.moneymanager.ui.viewmodel.AuthViewModel
@@ -142,7 +144,7 @@ fun DashboardScreen(
                     onBudgetClick = onNavigateToBudgets,
                     onCategoryClick = onNavigateToCategories,
                     onSavingsClick = onNavigateToSavings,
-                    onRecurringClick = onNavigateToRecurring,
+                    onNavigateToRecurring = onNavigateToRecurring,
                     onDebtLoanClick = onNavigateToDebtLoans
                 )
             }
@@ -321,8 +323,17 @@ fun NewDashboardHeader(user: com.example.moneymanager.data.model.User?, onProfil
                 modifier = Modifier.size(50.dp).clickable { onProfileClick() },
                 shape = CircleShape, color = Color.White.copy(alpha = 0.2f)
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(user?.displayName?.firstOrNull()?.toString()?.uppercase() ?: "U", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                if (!user?.photoUrl.isNullOrEmpty()) {
+                    AsyncImage(
+                        model = user?.photoUrl,
+                        contentDescription = "Profile Picture",
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(user?.displayName?.firstOrNull()?.toString()?.uppercase() ?: "U", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                    }
                 }
             }
             Spacer(Modifier.width(12.dp))
@@ -421,7 +432,7 @@ fun QuickActionsGrid(
     onBudgetClick: () -> Unit,
     onCategoryClick: () -> Unit,
     onSavingsClick: () -> Unit,
-    onRecurringClick: () -> Unit,
+    onNavigateToRecurring: () -> Unit,
     onDebtLoanClick: () -> Unit
 ) {
     Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
@@ -434,7 +445,7 @@ fun QuickActionsGrid(
         Spacer(Modifier.height(20.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             ActionIcon("Savings", Icons.Default.AccountBalanceWallet, Color(0xFF43A047), onSavingsClick)
-            ActionIcon("Recurring", Icons.Default.Repeat, Color(0xFF0288D1), onRecurringClick)
+            ActionIcon("Recurring", Icons.Default.Repeat, Color(0xFF0288D1), onNavigateToRecurring)
             ActionIcon("Debt/Loan", Icons.Default.MoneyOff, Color(0xFFE64A19), onDebtLoanClick)
             ActionIcon("Category", Icons.Default.GridView, Color(0xFF00BFA5), onCategoryClick)
         }

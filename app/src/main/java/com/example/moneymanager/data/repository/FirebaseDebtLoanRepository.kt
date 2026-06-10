@@ -31,7 +31,8 @@ class FirebaseDebtLoanRepository @Inject constructor(
     override suspend fun addDebtLoan(debtLoan: DebtLoan): Result<Unit> = try {
         val newDebtLoan = debtLoan.copy(userId = userId)
         val docRef = debtLoansCollection.document()
-        docRef.set(newDebtLoan.copy(id = docRef.id)).await()
+        // Ensure paidAmount is initialized to 0.0 for new debts/loans
+        docRef.set(newDebtLoan.copy(id = docRef.id, paidAmount = 0.0, isResolved = false)).await()
         Result.success(Unit)
     } catch (e: Exception) {
         Result.failure(e)
@@ -46,13 +47,6 @@ class FirebaseDebtLoanRepository @Inject constructor(
 
     override suspend fun deleteDebtLoan(id: String): Result<Unit> = try {
         debtLoansCollection.document(id).delete().await()
-        Result.success(Unit)
-    } catch (e: Exception) {
-        Result.failure(e)
-    }
-
-    override suspend fun resolveDebtLoan(id: String): Result<Unit> = try {
-        debtLoansCollection.document(id).update("isResolved", true).await()
         Result.success(Unit)
     } catch (e: Exception) {
         Result.failure(e)

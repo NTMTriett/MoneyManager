@@ -54,7 +54,7 @@ class TransactionViewModel @Inject constructor(
     private val gson = Gson()
     
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-2.5-flash",
+        modelName = "gemini-2.5-flash-lite",
         apiKey = BuildConfig.apiKey
     )
 
@@ -193,12 +193,23 @@ class TransactionViewModel @Inject constructor(
         viewModelScope.launch {
             _quickAddState.value = QuickAddState.Loading
             val prompt = """
-            Analyze this receipt image and extract:
-            1. amount (number)
-            2. type (always 'expense')
-            3. category (choose best from: Food, Transport, Shopping, Bills, Others)
-            4. description (short summary of what was bought)
-            Return ONLY a valid JSON object.
+            Analyze this receipt image and extract the following information accurately:
+            1. amount: The total amount as a number.
+               - IMPORTANT: Do NOT multiply or add extra zeros.
+               - If the receipt shows "250.00" or "250", return 250.0.
+               - If you see "250.00", it is 250.0, NOT 250000.
+               - Carefully distinguish between decimal points (.) and thousand separators (,).
+            2. type: Always return 'expense'.
+            3. category: Choose the best fit from: Food, Transport, Shopping, Bills, Others.
+            4. description: A very short summary of the purchase.
+
+            Return ONLY a valid JSON object in this format:
+            {
+              "amount": 0.0,
+              "type": "expense",
+              "category": "category_name",
+              "description": "description_text"
+            }
         """.trimIndent()
 
             try {

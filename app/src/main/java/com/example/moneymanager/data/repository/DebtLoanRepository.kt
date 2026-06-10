@@ -8,5 +8,4 @@ interface DebtLoanRepository {
     suspend fun addDebtLoan(debtLoan: DebtLoan): Result<Unit>
     suspend fun updateDebtLoan(debtLoan: DebtLoan): Result<Unit>
     suspend fun deleteDebtLoan(id: String): Result<Unit>
-    suspend fun resolveDebtLoan(id: String): Result<Unit>
 }

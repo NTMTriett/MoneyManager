@@ -52,13 +52,59 @@ class DebtLoanViewModel @Inject constructor(
                     year = calendar.get(Calendar.YEAR)
                 )
                 transactionRepository.addTransaction(transaction).onSuccess {
-                    _uiEvent.emit("Thêm giao dịch thành công")
+                    _uiEvent.emit("Record added and balance updated")
                 }.onFailure {
-                    _uiEvent.emit("Lỗi cập nhật số dư: ${it.message}")
+                    _uiEvent.emit("Record added but failed to update balance")
                 }
             }.onFailure {
                 Log.e("DebtLoanVM", "Add failed", it)
-                _uiEvent.emit("Lỗi: ${it.message}")
+                _uiEvent.emit("Error: ${it.message}")
+            }
+        }
+    }
+
+    fun updateDebtLoan(debtLoan: DebtLoan) {
+        viewModelScope.launch {
+            repository.updateDebtLoan(debtLoan).onSuccess {
+                _uiEvent.emit("Record updated successfully")
+            }.onFailure {
+                _uiEvent.emit("Update failed: ${it.message}")
+            }
+        }
+    }
+
+    fun payDebtLoan(debtLoan: DebtLoan, paymentAmount: Double) {
+        viewModelScope.launch { // Ensure the whole function runs in a coroutine
+            if (debtLoan.id.isBlank() || paymentAmount <= 0) {
+                _uiEvent.emit("Invalid payment amount or record ID.")
+                return@launch
+            }
+            
+            val newPaidAmount = (debtLoan.paidAmount + paymentAmount).coerceAtMost(debtLoan.amount)
+            val isNowResolved = newPaidAmount >= debtLoan.amount
+            
+            val updatedItem = debtLoan.copy(
+                paidAmount = newPaidAmount,
+                isResolved = isNowResolved
+            )
+            
+            repository.updateDebtLoan(updatedItem).onSuccess {
+                val calendar = Calendar.getInstance()
+                val transaction = Transaction(
+                    amount = paymentAmount,
+                    type = if (debtLoan.type == "debt") "expense" else "income", // If you borrowed (debt) -> paying is expense. If you lent (loan) -> receiving is income.
+                    category = "Debt/Loan",
+                    description = "Payment from/to ${debtLoan.personName} for ${debtLoan.description}",
+                    date = Timestamp.now(),
+                    month = calendar.get(Calendar.MONTH) + 1,
+                    year = calendar.get(Calendar.YEAR)
+                )
+                // No .await() on Result
+                transactionRepository.addTransaction(transaction)
+                    .onSuccess { _uiEvent.emit(if (isNowResolved) "Record fully settled!" else "Payment recorded") }
+                    .onFailure { _uiEvent.emit("Payment recorded but failed to update balance: ${it.message}") }
+            }.onFailure {
+                _uiEvent.emit("Payment failed: ${it.message}")
             }
         }
     }
@@ -66,37 +112,30 @@ class DebtLoanViewModel @Inject constructor(
     fun deleteDebtLoan(id: String) {
         viewModelScope.launch {
             repository.deleteDebtLoan(id).onSuccess {
-                _uiEvent.emit("Đã xóa bản ghi")
+                _uiEvent.emit("Record deleted")
             }.onFailure {
-                _uiEvent.emit("Lỗi khi xóa: ${it.message}")
+                _uiEvent.emit("Delete failed: ${it.message}")
             }
         }
     }
 
     fun resolveDebtLoan(debtLoan: DebtLoan) {
-        if (debtLoan.id.isBlank()) return
-        
-        viewModelScope.launch {
-            repository.resolveDebtLoan(debtLoan.id).onSuccess {
-                val calendar = Calendar.getInstance()
-                val transaction = Transaction(
-                    amount = debtLoan.amount,
-                    // Nếu trước đó mượn (income) -> Giờ trả (expense)
-                    // Nếu trước đó cho vay (expense) -> Giờ thu hồi (income)
-                    type = if (debtLoan.type == "debt") "expense" else "income",
-                    category = "Debt/Loan",
-                    description = "Resolved: ${debtLoan.personName}",
-                    date = Timestamp.now(),
-                    month = calendar.get(Calendar.MONTH) + 1,
-                    year = calendar.get(Calendar.YEAR)
-                )
-                transactionRepository.addTransaction(transaction).onSuccess {
-                    _uiEvent.emit("Đã hoàn tất và cập nhật số dư")
+        viewModelScope.launch { // Ensure the whole function runs in a coroutine
+            if (debtLoan.id.isBlank()) {
+                _uiEvent.emit("Invalid record ID.")
+                return@launch
+            }
+            // Call payDebtLoan with the remaining amount to fully settle
+            val amountToSettle = debtLoan.remainingAmount
+            if (amountToSettle > 0) {
+                payDebtLoan(debtLoan, amountToSettle)
+            } else if (!debtLoan.isResolved) {
+                // If already paid in full but not marked resolved (edge case)
+                repository.updateDebtLoan(debtLoan.copy(isResolved = true)).onSuccess {
+                    _uiEvent.emit("Record marked as resolved")
                 }.onFailure {
-                    _uiEvent.emit("Ghi chú: Đã hoàn thành nhưng lỗi cập nhật số dư")
+                    _uiEvent.emit("Failed to mark as resolved: ${it.message}")
                 }
-            }.onFailure {
-                _uiEvent.emit("Lỗi khi thực hiện: ${it.message}")
             }
         }
     }
