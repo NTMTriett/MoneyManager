@@ -45,9 +45,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.moneymanager.data.model.Transaction
+import com.example.moneymanager.ui.screens.transaction.ScanBillResultDialog
 import com.example.moneymanager.ui.theme.*
 import com.example.moneymanager.ui.viewmodel.AuthViewModel
 import com.example.moneymanager.ui.viewmodel.BudgetViewModel
+import com.example.moneymanager.ui.viewmodel.BudgetsUiState
+import com.example.moneymanager.ui.viewmodel.CategoryViewModel
 import com.example.moneymanager.ui.viewmodel.TransactionViewModel
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -65,15 +68,18 @@ fun DashboardScreen(
     onTransactionClick: (String) -> Unit,
     authViewModel: AuthViewModel = hiltViewModel(),
     transactionViewModel: TransactionViewModel = hiltViewModel(),
-    budgetViewModel: BudgetViewModel = hiltViewModel()
+    budgetViewModel: BudgetViewModel = hiltViewModel(),
+    categoryViewModel: CategoryViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val currentUser by authViewModel.currentUser.collectAsState(initial = null)
     val transactionsState by transactionViewModel.transactionsState.collectAsState()
     val quickAddState by transactionViewModel.quickAddState.collectAsState()
+    val budgetsUiState by budgetViewModel.uiState.collectAsState()
+    val categoriesState by categoryViewModel.categoriesState.collectAsState()
     var quickAddText by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
-    
+
     var isBalanceVisible by remember { mutableStateOf(true) }
     var showScanDialog by remember { mutableStateOf(false) }
 
@@ -103,6 +109,21 @@ fun DashboardScreen(
     LaunchedEffect(Unit) {
         transactionViewModel.loadAllTransactions()
         budgetViewModel.loadBudgets()
+        categoryViewModel.loadCategoriesByType("expense") // Pre-load categories for scan dialog
+    }
+
+    // Show snackbar feedback after quick-add or scan save
+    LaunchedEffect(quickAddState) {
+        when (val state = quickAddState) {
+            is TransactionViewModel.QuickAddState.Success -> {
+                quickAddText = ""
+                snackbarHostState.showSnackbar(state.message)
+            }
+            is TransactionViewModel.QuickAddState.Error -> {
+                snackbarHostState.showSnackbar(state.message)
+            }
+            else -> {}
+        }
     }
 
     Scaffold(
@@ -181,7 +202,7 @@ fun DashboardScreen(
         }
     }
 
-    // Scan Choice Dialog
+    // Scan Choice Dialog (Camera vs Gallery)
     if (showScanDialog) {
         AlertDialog(
             onDismissRequest = { showScanDialog = false },
@@ -196,6 +217,32 @@ fun DashboardScreen(
                 OutlinedButton(onClick = { galleryLauncher.launch("image/*"); showScanDialog = false }) {
                     Text("Gallery", color = MediumGreen)
                 }
+            }
+        )
+    }
+
+    // Scan Result Preview Dialog (Option B) — shown after AI processes the bill
+    if (quickAddState is TransactionViewModel.QuickAddState.ScanResult) {
+        val scanData = (quickAddState as TransactionViewModel.QuickAddState.ScanResult).data
+
+        val categories = when (val cs = categoriesState) {
+            is CategoryViewModel.CategoriesState.Success -> cs.categories
+            else -> emptyList()
+        }
+        val activeBudgets = when (val bs = budgetsUiState) {
+            is BudgetsUiState.Success -> bs.budgets
+            else -> emptyList()
+        }
+
+        ScanBillResultDialog(
+            scanData = scanData,
+            categories = categories,
+            activeBudgets = activeBudgets,
+            onConfirm = { editedData ->
+                transactionViewModel.confirmScanResult(editedData)
+            },
+            onDismiss = {
+                transactionViewModel.resetQuickAddState()
             }
         )
     }

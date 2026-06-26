@@ -10,6 +10,7 @@ import com.example.moneymanager.data.model.Transaction
 import com.example.moneymanager.data.repository.CategoryRepository
 import com.example.moneymanager.data.repository.TransactionRepository
 import com.example.moneymanager.data.repository.OllamaRepository
+import com.example.moneymanager.data.repository.BudgetRepository
 import com.example.moneymanager.data.model.AiTransactionData
 import com.example.moneymanager.util.PromptUtils
 import com.example.moneymanager.BuildConfig
@@ -28,7 +29,8 @@ import javax.inject.Inject
 class TransactionViewModel @Inject constructor(
     private val transactionRepository: TransactionRepository,
     private val categoryRepository: CategoryRepository,
-    private val ollamaRepository: OllamaRepository // Inject Ollama
+    private val ollamaRepository: OllamaRepository,
+    private val budgetRepository: BudgetRepository // Inject for smart scan context
 ) : ViewModel() {
 
     private val _transactionsState = MutableStateFlow<TransactionsState>(TransactionsState.Loading)
@@ -53,7 +55,7 @@ class TransactionViewModel @Inject constructor(
     private val gson = Gson()
     
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-1.5-flash",
+        modelName = "gemini-2.5-flash",
         apiKey = BuildConfig.apiKey
     )
 
@@ -65,17 +67,44 @@ class TransactionViewModel @Inject constructor(
     fun scanBill(bitmap: Bitmap) {
         viewModelScope.launch {
             _quickAddState.value = QuickAddState.Loading
-            val prompt = "Extract receipt data into JSON: { amount, type, category, description }. Rules: Type must be 'income' or 'expense'. Amount must be number."
             try {
-                val response = generativeModel.generateContent(content { image(bitmap); text(prompt) })
+                // 1. Load user's categories and active budgets to build smart prompt
+                val categories = categoryRepository.getAllCategories().first()
+                val activeBudgets = budgetRepository.getActiveBudgets()
+
+                val categoryNames = categories.joinToString(", ") { it.name }
+                val budgetCategories = activeBudgets.joinToString(", ") { it.category }
+                    .ifBlank { "(Chưa có budget nào)" }
+
+                val prompt = PromptUtils.getScanBillPrompt(categoryNames, budgetCategories)
+
+                // 2. Send image + smart prompt to Gemini
+                val response = generativeModel.generateContent(
+                    content { image(bitmap); text(prompt) }
+                )
                 val rawText = response.text ?: ""
-                val cleanJson = rawText.substringAfter("{").substringBeforeLast("}").let { "{ $it }" }
+                val cleanJson = rawText
+                    .substringAfter("{")
+                    .substringBeforeLast("}")
+                    .let { "{ $it }" }
                 val aiData = gson.fromJson(cleanJson, AiTransactionData::class.java)
-                saveAiTransaction(aiData)
+
+                // 3. Emit ScanResult so the UI shows a preview dialog (Option B)
+                _quickAddState.value = QuickAddState.ScanResult(aiData)
             } catch (e: Exception) {
                 _quickAddState.value = QuickAddState.Error("AI Error: ${e.message}")
             }
         }
+    }
+
+    /** Called when user confirms the scan result dialog (possibly with edited category). */
+    fun confirmScanResult(aiData: AiTransactionData) {
+        saveAiTransaction(aiData)
+    }
+
+    /** Resets state back to Idle (e.g. user dismissed the dialog). */
+    fun resetQuickAddState() {
+        _quickAddState.value = QuickAddState.Idle
     }
 
     // --- AI QUICK ADD (Dùng Ollama theo ý bạn) ---
@@ -224,6 +253,8 @@ class TransactionViewModel @Inject constructor(
         data object Loading : QuickAddState
         data class Success(val message: String) : QuickAddState
         data class Error(val message: String) : QuickAddState
+        /** AI scanned a bill and is waiting for user confirmation before saving. */
+        data class ScanResult(val data: AiTransactionData) : QuickAddState
     }
 
     sealed class TransactionsState {

@@ -18,5 +18,6 @@ data class AiTransactionData(
     val type: String? = null, // "income" hoặc "expense"
     val category: String? = null,
     val description: String? = null,
+    val currency: String? = null,   // "USD", "VND", "EUR", etc. — as printed on the bill
     val isTransaction: Boolean = false // Cờ đánh dấu xem AI có nhận diện được giao dịch không
 )
