@@ -30,10 +30,10 @@ object NetworkModule {
 
         return OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
-            // TĂNG TIMEOUT LÊN 60 GIÂY ĐỂ ĐỢI AI PHẢN HỒI
-            .connectTimeout(60, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS) 
-            .writeTimeout(60, TimeUnit.SECONDS)
+            // TĂNG TIMEOUT LÊN 120 GIÂY ĐỂ ĐỢI AI PHẢN HỒI (CHO CÁC MÁY CẤU HÌNH YẾU)
+            .connectTimeout(120, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS) 
+            .writeTimeout(120, TimeUnit.SECONDS)
             .build()
     }
 

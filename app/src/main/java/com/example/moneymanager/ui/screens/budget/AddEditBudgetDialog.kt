@@ -124,6 +124,17 @@ fun AddEditBudgetDialog(
                     },
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                if (budget != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(
+                        onClick = onDelete,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Delete Budget")
+                    }
+                }
             }
         },
         confirmButton = {
@@ -168,14 +179,6 @@ fun AddEditBudgetDialog(
             }
         ) {
             DatePicker(state = datePickerState)
-        }
-    }
-    
-    if (budget != null) {
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.Center) {
-            Button(onClick = onDelete, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
-                Text("Delete Budget")
-            }
         }
     }
 }

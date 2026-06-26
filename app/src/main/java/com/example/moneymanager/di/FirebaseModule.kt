@@ -1,14 +1,7 @@
 package com.example.moneymanager.di
 
 import android.content.Context
-import com.example.moneymanager.data.repository.AuthRepository
-import com.example.moneymanager.data.repository.BudgetRepository
-import com.example.moneymanager.data.repository.CategoryRepository
-import com.example.moneymanager.data.repository.FirebaseAuthRepository
-import com.example.moneymanager.data.repository.FirebaseBudgetRepository
-import com.example.moneymanager.data.repository.FirebaseCategoryRepository
-import com.example.moneymanager.data.repository.FirebaseTransactionRepository
-import com.example.moneymanager.data.repository.TransactionRepository
+import com.example.moneymanager.data.repository.*
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -84,5 +77,32 @@ object FirebaseModule {
         auth: FirebaseAuth
     ): BudgetRepository {
         return FirebaseBudgetRepository(firestore, auth)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSavingsGoalRepository(
+        firestore: FirebaseFirestore,
+        auth: FirebaseAuth
+    ): SavingsGoalRepository {
+        return FirebaseSavingsGoalRepository(firestore, auth)
+    }
+
+    @Provides
+    @Singleton
+    fun provideRecurringTransactionRepository(
+        firestore: FirebaseFirestore,
+        auth: FirebaseAuth
+    ): RecurringTransactionRepository {
+        return FirebaseRecurringTransactionRepository(firestore, auth)
+    }
+
+    @Provides
+    @Singleton
+    fun provideDebtLoanRepository(
+        firestore: FirebaseFirestore,
+        auth: FirebaseAuth
+    ): DebtLoanRepository {
+        return FirebaseDebtLoanRepository(firestore, auth)
     }
 }

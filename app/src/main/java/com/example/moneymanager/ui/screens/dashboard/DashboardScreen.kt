@@ -8,14 +8,10 @@ import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.launch
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,20 +26,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import com.example.moneymanager.data.model.Transaction
 import com.example.moneymanager.ui.screens.transaction.ScanBillResultDialog
 import com.example.moneymanager.ui.theme.*
@@ -65,6 +60,9 @@ fun DashboardScreen(
     onNavigateToProfile: () -> Unit,
     onNavigateToBudgets: () -> Unit,
     onNavigateToChat: () -> Unit,
+    onNavigateToSavings: () -> Unit,
+    onNavigateToRecurring: () -> Unit,
+    onNavigateToDebtLoans: () -> Unit,
     onTransactionClick: (String) -> Unit,
     authViewModel: AuthViewModel = hiltViewModel(),
     transactionViewModel: TransactionViewModel = hiltViewModel(),
@@ -128,7 +126,6 @@ fun DashboardScreen(
 
     Scaffold(
         containerColor = Color.White,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onNavigateToChat,
@@ -141,12 +138,7 @@ fun DashboardScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(paddingValues)
         ) {
-            // 1. Header Section (Hello!)
-            item {
-                NewDashboardHeader(user = currentUser, onProfileClick = onNavigateToProfile)
-            }
-
-            // 2. TOTAL BALANCE CARD (TOP - Floating over header)
+            item { NewDashboardHeader(user = currentUser, onProfileClick = onNavigateToProfile) }
             item {
                 TotalBalanceCard(
                     transactionsState = transactionsState,
@@ -155,8 +147,6 @@ fun DashboardScreen(
                     onDetailClick = onNavigateToStatistics
                 )
             }
-
-            // 3. AI QUICK ADD INPUT (Directly below Balance)
             item {
                 DashboardQuickAdd(
                     text = quickAddText,
@@ -167,27 +157,19 @@ fun DashboardScreen(
                     }
                 )
             }
-
-            // 4. ACTION GRID (4 Columns like bank apps)
             item {
                 QuickActionsGrid(
                     onScanClick = { showScanDialog = true },
                     onAddClick = onNavigateToAddTransaction,
                     onHistoryClick = onNavigateToTransactions,
                     onBudgetClick = onNavigateToBudgets,
-                    onCategoryClick = onNavigateToCategories
+                    onCategoryClick = onNavigateToCategories,
+                    onSavingsClick = onNavigateToSavings,
+                    onNavigateToRecurring = onNavigateToRecurring,
+                    onDebtLoanClick = onNavigateToDebtLoans
                 )
             }
-
-            // 5. PROMO / JUST FOR YOU
-            item {
-                JustForYouSection(onChatClick = onNavigateToChat)
-            }
-
-            // 6. RECENT TRANSACTIONS
-            item {
-                RecentHeader(onSeeAllClick = onNavigateToTransactions)
-            }
+            item { RecentHeader(onSeeAllClick = onNavigateToTransactions) }
 
             when (val state = transactionsState) {
                 is TransactionViewModel.TransactionsState.Success -> {
@@ -197,7 +179,6 @@ fun DashboardScreen(
                 }
                 else -> {}
             }
-
             item { Spacer(modifier = Modifier.height(100.dp)) }
         }
     }
@@ -207,7 +188,7 @@ fun DashboardScreen(
         AlertDialog(
             onDismissRequest = { showScanDialog = false },
             title = { Text("Scan Bill", fontWeight = FontWeight.Bold) },
-            text = { Text("Choose how you want to provide the bill photo.") },
+            text = { Text("Choose a method to scan your receipt.") },
             confirmButton = {
                 Button(onClick = { cameraLauncher.launch(); showScanDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = MediumGreen)) {
                     Text("Take Photo")
@@ -260,8 +241,17 @@ fun NewDashboardHeader(user: com.example.moneymanager.data.model.User?, onProfil
                 modifier = Modifier.size(50.dp).clickable { onProfileClick() },
                 shape = CircleShape, color = Color.White.copy(alpha = 0.2f)
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(user?.displayName?.firstOrNull()?.toString()?.uppercase() ?: "U", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                if (!user?.photoUrl.isNullOrEmpty()) {
+                    AsyncImage(
+                        model = user?.photoUrl,
+                        contentDescription = "Profile Picture",
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(user?.displayName?.firstOrNull()?.toString()?.uppercase() ?: "U", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                    }
                 }
             }
             Spacer(Modifier.width(12.dp))
@@ -353,7 +343,16 @@ fun DashboardQuickAdd(text: String, onTextChanged: (String) -> Unit, isLoading: 
 }
 
 @Composable
-fun QuickActionsGrid(onScanClick: () -> Unit, onAddClick: () -> Unit, onHistoryClick: () -> Unit, onBudgetClick: () -> Unit, onCategoryClick: () -> Unit) {
+fun QuickActionsGrid(
+    onScanClick: () -> Unit,
+    onAddClick: () -> Unit,
+    onHistoryClick: () -> Unit,
+    onBudgetClick: () -> Unit,
+    onCategoryClick: () -> Unit,
+    onSavingsClick: () -> Unit,
+    onNavigateToRecurring: () -> Unit,
+    onDebtLoanClick: () -> Unit
+) {
     Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             ActionIcon("Scan", Icons.Default.DocumentScanner, Color(0xFF1A73E8), onScanClick)
@@ -363,10 +362,10 @@ fun QuickActionsGrid(onScanClick: () -> Unit, onAddClick: () -> Unit, onHistoryC
         }
         Spacer(Modifier.height(20.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            ActionIcon("Savings", Icons.Default.AccountBalanceWallet, Color(0xFF43A047), onSavingsClick)
+            ActionIcon("Recurring", Icons.Default.Repeat, Color(0xFF0288D1), onNavigateToRecurring)
+            ActionIcon("Debt/Loan", Icons.Default.MoneyOff, Color(0xFFE64A19), onDebtLoanClick)
             ActionIcon("Category", Icons.Default.GridView, Color(0xFF00BFA5), onCategoryClick)
-            ActionIcon("Savings", Icons.Default.AccountBalanceWallet, Color(0xFF43A047), {})
-            ActionIcon("Bank", Icons.Default.AccountBalance, Color(0xFF0288D1), {})
-            ActionIcon("All", Icons.Default.Apps, Color(0xFF757575), {})
         }
     }
 }
@@ -379,27 +378,6 @@ fun ActionIcon(label: String, icon: ImageVector, color: Color, onClick: () -> Un
         }
         Spacer(Modifier.height(6.dp))
         Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-    }
-}
-
-@Composable
-fun JustForYouSection(onChatClick: () -> Unit) {
-    Column(modifier = Modifier.padding(vertical = 16.dp)) {
-        Text("Just for you", fontWeight = FontWeight.Black, fontSize = 18.sp, modifier = Modifier.padding(horizontal = 24.dp))
-        LazyRow(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            item { PromoItem("AI Advisor", "Get financial tips from AI", Color(0xFFE3F2FD), onChatClick) }
-            item { PromoItem("Investment", "Start growing your wealth", Color(0xFFF1F8E9), {}) }
-        }
-    }
-}
-
-@Composable
-fun PromoItem(title: String, desc: String, bg: Color, onClick: () -> Unit) {
-    Card(modifier = Modifier.size(width = 220.dp, height = 90.dp).clickable { onClick() }, shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = bg)) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(title, fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 14.sp)
-            Text(desc, fontSize = 11.sp, color = TextGray)
-        }
     }
 }
 
@@ -427,14 +405,5 @@ fun TransactionItemUI(transaction: Transaction, onClick: (String) -> Unit) {
             (if (transaction.type == "income") "+" else "-") + NumberFormat.getCurrencyInstance().format(transaction.amount),
             fontWeight = FontWeight.Black, color = if (transaction.type == "income") Color(0xFF4CAF50) else Color(0xFFF44336)
         )
-    }
-}
-
-@Composable
-fun EmptyStateCard(onAddClick: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().padding(40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.AutoMirrored.Filled.ReceiptLong, null, tint = Color.LightGray, modifier = Modifier.size(64.dp))
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onAddClick, colors = ButtonDefaults.buttonColors(containerColor = MediumGreen)) { Text("Add Transaction") }
     }
 }

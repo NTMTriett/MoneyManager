@@ -58,6 +58,9 @@ import com.example.moneymanager.ui.theme.TextGray
 import com.example.moneymanager.ui.viewmodel.AuthViewModel
 import com.example.moneymanager.ui.screens.chat.ChatScreen
 import com.example.moneymanager.ui.viewmodel.ChatViewModel
+import com.example.moneymanager.ui.screens.savings.SavingsGoalsScreen
+import com.example.moneymanager.ui.screens.recurring.RecurringTransactionsScreen
+import com.example.moneymanager.ui.screens.debtloan.DebtLoansScreen
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -244,7 +247,10 @@ fun NavGraph(
                 },
                 onNavigateToStatistics = { navController.navigate(Screen.Statistics.route)},
                 onNavigateToBudgets = { navController.navigate(Screen.Budgets.route) },
-                onNavigateToChat = { navController.navigate(Screen.Chat.route) }
+                onNavigateToChat = { navController.navigate(Screen.Chat.route) },
+                onNavigateToSavings = { navController.navigate(Screen.SavingsGoals.route) },
+                onNavigateToRecurring = { navController.navigate(Screen.RecurringTransactions.route) },
+                onNavigateToDebtLoans = { navController.navigate(Screen.DebtLoans.route) }
             )
         }
 
@@ -307,6 +313,18 @@ fun NavGraph(
                viewModel = chatViewModel,
                 onClose = { navController.popBackStack() }
             )
+        }
+
+        composable(Screen.SavingsGoals.route) {
+            SavingsGoalsScreen(onNavigateBack = { navController.popBackStack() })
+        }
+
+        composable(Screen.RecurringTransactions.route) {
+            RecurringTransactionsScreen(onNavigateBack = { navController.popBackStack() })
+        }
+
+        composable(Screen.DebtLoans.route) {
+            DebtLoansScreen(onNavigateBack = { navController.popBackStack() })
         }
     }
 }
