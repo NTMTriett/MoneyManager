@@ -106,6 +106,12 @@ class AuthViewModel @Inject constructor(
 
     fun getGoogleSignInClient() = googleSignInClient
 
+    fun reportGoogleSignInError(statusCode: Int, message: String?) {
+        _authState.value = AuthState.Error(
+            "Google Sign-In failed (status $statusCode): ${message ?: "Unknown error"}"
+        )
+    }
+
     fun resetState() {
         _authState.value = AuthState.Idle
     }

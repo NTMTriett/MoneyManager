@@ -1,7 +1,3 @@
 <resources>
     <string name="app_name">MoneyManager</string>
-    <!-- Temporary placeholder - replace with actual Web Client ID from Firebase Console -->
-    <string name="default_web_client_id">your_web_client_id_here</string>
-    <!-- The default_web_client_id will be automatically generated -->
-    <!-- by the Google Services plugin from the updated google-services.json -->
 </resources>

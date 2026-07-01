@@ -36,6 +36,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
@@ -49,6 +50,7 @@ import com.example.moneymanager.ui.viewmodel.CategoryViewModel
 import com.example.moneymanager.ui.viewmodel.TransactionViewModel
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
+import java.io.File
 import java.util.Locale
 
 @Composable
@@ -80,6 +82,7 @@ fun DashboardScreen(
 
     var isBalanceVisible by remember { mutableStateOf(true) }
     var showScanDialog by remember { mutableStateOf(false) }
+    var pendingCameraImageUri by remember { mutableStateOf<Uri?>(null) }
 
     // Launcher chọn ảnh từ thư viện
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -97,11 +100,23 @@ fun DashboardScreen(
         }
     }
 
-    // Launcher chụp ảnh từ Camera
+    // Launcher chụp ảnh full-size từ Camera
     val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview()
-    ) { bitmap: Bitmap? ->
-        bitmap?.let { transactionViewModel.scanBill(it) }
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success) {
+            pendingCameraImageUri?.let { uri ->
+                val bitmap = if (Build.VERSION.SDK_INT < 28) {
+                    @Suppress("DEPRECATION")
+                    MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+                } else {
+                    val source = ImageDecoder.createSource(context.contentResolver, uri)
+                    ImageDecoder.decodeBitmap(source)
+                }
+                transactionViewModel.scanBill(bitmap)
+            }
+        }
+        pendingCameraImageUri = null
     }
 
     LaunchedEffect(Unit) {
@@ -190,7 +205,17 @@ fun DashboardScreen(
             title = { Text("Scan Bill", fontWeight = FontWeight.Bold) },
             text = { Text("Choose a method to scan your receipt.") },
             confirmButton = {
-                Button(onClick = { cameraLauncher.launch(); showScanDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = MediumGreen)) {
+                Button(onClick = {
+                    val imageFile = File.createTempFile("scan_bill_", ".jpg", context.cacheDir)
+                    val imageUri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.provider",
+                        imageFile
+                    )
+                    pendingCameraImageUri = imageUri
+                    cameraLauncher.launch(imageUri)
+                    showScanDialog = false
+                }, colors = ButtonDefaults.buttonColors(containerColor = MediumGreen)) {
                     Text("Take Photo")
                 }
             },
