@@ -50,7 +50,7 @@ fun PasswordResetDialog(
         confirmButton = {
             Button(
                 onClick = onConfirm,
-                enabled = email.isNotEmpty()
+                enabled = email.isNotBlank()
             ) {
                 Text("Send Reset Link")
             }

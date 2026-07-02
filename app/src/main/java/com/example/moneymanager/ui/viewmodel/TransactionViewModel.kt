@@ -20,6 +20,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import java.util.Locale
 import javax.inject.Inject
 
 @HiltViewModel
@@ -108,23 +109,26 @@ class TransactionViewModel @Inject constructor(
         _quickAddState.value = QuickAddState.Idle
     }
 
-    // --- AI QUICK ADD (Dùng Ollama theo ý bạn) ---
     fun processQuickAdd(input: String) {
         if (input.isBlank()) return
         viewModelScope.launch {
             _quickAddState.value = QuickAddState.Loading
             try {
                 // Lấy danh sách category để AI gán cho đúng
-                val categories = categoryRepository.getAllCategories().first().joinToString(",") { it.name }
-                val prompt = PromptUtils.getQuickAddPrompt(input, categories)
-
+                val categories = categoryRepository.getAllCategories().first()
+                val expenseCategories = categories
+                    .filter { it.type == "expense" }
+                    .joinToString(", ") { it.name }
+                val incomeCategories = categories
+                    .filter { it.type == "income" }
+                    .joinToString(", ") { it.name }
+                val prompt = PromptUtils.getQuickAddPrompt(input, expenseCategories, incomeCategories)
                 val result = ollamaRepository.sendMessage(prompt, modelName = "qwen2.5:3b", jsonMode = true)
-                
                 result.fold(
                     onSuccess = { jsonResponse ->
                         val cleanJson = jsonResponse.substringAfter("{").substringBeforeLast("}").let { "{ $it }" }
                         val aiData = gson.fromJson(cleanJson, AiTransactionData::class.java)
-                        saveAiTransaction(aiData)
+                        saveAiTransaction(normalizeQuickAddData(input, aiData, categories.map { it.name }))
                     },
                     onFailure = { 
                         _quickAddState.value = QuickAddState.Error("Ollama connection error")
@@ -134,6 +138,93 @@ class TransactionViewModel @Inject constructor(
                 _quickAddState.value = QuickAddState.Error("Process error: ${e.message}")
             }
         }
+    }
+
+    private fun normalizeQuickAddData(
+        input: String,
+        aiData: AiTransactionData,
+        categoryNames: List<String>
+    ): AiTransactionData {
+        val descriptionFromInput = cleanQuickAddDescription(input)
+
+        return aiData.copy(
+            amount = parseAmountFromQuickAddInput(input) ?: aiData.amount,
+            category = normalizeCategoryName(aiData.category, categoryNames) ?: aiData.category,
+            description = descriptionFromInput ?: aiData.description
+        )
+    }
+
+    private fun normalizeCategoryName(category: String?, categoryNames: List<String>): String? {
+        if (category.isNullOrBlank()) return null
+
+        val exactMatch = categoryNames.firstOrNull { it.equals(category, ignoreCase = true) }
+        if (exactMatch != null) return exactMatch
+
+        val normalizedCategory = category.normalizedCategoryKey()
+        return categoryNames.firstOrNull { name ->
+            val normalizedName = name.normalizedCategoryKey()
+            normalizedName.contains(normalizedCategory) || normalizedCategory.contains(normalizedName)
+        }
+    }
+
+    private fun parseAmountFromQuickAddInput(input: String): Double? {
+        val normalized = input.lowercase()
+
+        val usdRegex = Regex("""(?:[${'$'}]\s*([+-]?\d+(?:[.,]\d+)?)|([+-]?\d+(?:[.,]\d+)?)\s*(?:[${'$'}]|usd|dollar|đô))""")
+        usdRegex.find(normalized)?.let { match ->
+            val value = match.groupValues[1].ifBlank { match.groupValues[2] }
+            return value.replace(",", ".").toDoubleOrNull()
+        }
+
+        val vndUnitRegex = Regex("""([+-]?\d+(?:[.,]\d+)?)\s*(k|nghìn|ng|m|tr|triệu|củ|chai|tỷ|ty)""")
+        val unitMatches = vndUnitRegex.findAll(normalized).toList()
+        if (unitMatches.isNotEmpty()) {
+            val total = unitMatches.sumOf { match ->
+                val number = match.groupValues[1].replace(",", ".").toDoubleOrNull() ?: 0.0
+                val multiplier = when (match.groupValues[2]) {
+                    "k", "nghìn", "ng" -> 1_000.0
+                    "m", "tr", "triệu", "củ", "chai" -> 1_000_000.0
+                    "tỷ", "ty" -> 1_000_000_000.0
+                    else -> 1.0
+                }
+                number * multiplier
+            }
+            if (total > 0.0) return total
+        }
+
+        val plainNumber = Regex("""[+-]?\d+(?:[.,]\d+)?""").find(normalized)?.value
+        val amount = plainNumber
+            ?.replace(",", "")
+            ?.toDoubleOrNull()
+            ?: return null
+
+        return if (amount in 1.0..999.0) amount * 1_000 else amount
+    }
+
+    private fun cleanQuickAddDescription(input: String): String? {
+        val description = input
+            .replace(Regex("""[${'$'}]\s*[+-]?\d+(?:[.,]\d+)?"""), " ")
+            .replace(
+                Regex(
+                    """[+-]?\d+(?:[.,]\d+)?\s*(?:[${'$'}]|usd|dollar|đô|k|nghìn|ng|m|tr|triệu|củ|chai|tỷ|ty|vnd|đ|₫)?""",
+                    RegexOption.IGNORE_CASE
+                ),
+                " "
+            )
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+
+        if (description.isBlank()) return null
+
+        return description.replaceFirstChar {
+            if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
+        }
+    }
+
+    private fun String.normalizedCategoryKey(): String {
+        return lowercase()
+            .replace("&", "and")
+            .replace(Regex("""[^a-z0-9]+"""), "")
     }
 
     private fun saveAiTransaction(aiData: AiTransactionData) {
@@ -282,8 +373,6 @@ class TransactionViewModel @Inject constructor(
     fun clearSelection() {
         _selectedTransactionIds.value = emptySet()
     }
-
-
     sealed interface QuickAddState {
         data object Idle : QuickAddState
         data object Loading : QuickAddState

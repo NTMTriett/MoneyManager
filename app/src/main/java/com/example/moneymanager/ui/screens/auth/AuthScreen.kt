@@ -158,6 +158,10 @@ fun AuthScreen(
                 ErrorMessage((authState as AuthViewModel.AuthState.Error).message)
             }
 
+            if (authState is AuthViewModel.AuthState.PasswordResetSent) {
+                SuccessMessage("If this email is registered, a password reset link will be sent shortly.")
+            }
+
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
@@ -232,6 +236,8 @@ fun LoginContent(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var showResetDialog by remember { mutableStateOf(false) }
+    var resetEmail by remember { mutableStateOf("") }
 
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
         EmeraldTextField(
@@ -265,9 +271,22 @@ fun LoginContent(
             modifier = Modifier
                 .align(Alignment.End)
                 .clickable {
-                    if(email.isNotEmpty()) authViewModel.resetPassword(email)
+                    resetEmail = email
+                    showResetDialog = true
                 }
         )
+
+        if (showResetDialog) {
+            PasswordResetDialog(
+                email = resetEmail,
+                onEmailChange = { resetEmail = it },
+                onDismiss = { showResetDialog = false },
+                onConfirm = {
+                    authViewModel.resetPassword(resetEmail.trim())
+                    showResetDialog = false
+                }
+            )
+        }
 
         Spacer(modifier = Modifier.height(32.dp))
 
@@ -470,6 +489,26 @@ fun ErrorMessage(message: String) {
         Text(
             text = message,
             color = Color(0xFFD32F2F),
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+fun SuccessMessage(message: String) {
+    Card(
+        modifier = Modifier
+            .padding(horizontal = 24.dp)
+            .fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))
+    ) {
+        Text(
+            text = message,
+            color = Color(0xFF2E7D32),
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             modifier = Modifier
